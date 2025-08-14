@@ -6,59 +6,35 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    // Validate the incoming ESP32 data structure
+    // Validate incoming data
     const validationResult = validateESP32Data(body);
     if (!validationResult.isValid) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Invalid sensor data format",
-          errors: validationResult.errors,
-        },
+        { error: validationResult.errors.join(", ") },
         { status: 400 }
       );
     }
 
-    // Process and store the sensor data
-    const processedData = sensorService.processSensorData(body);
+    // Process the sensor data
+    const processedData = await sensorService.processSensorData(body);
 
     console.log("✅ Received and processed sensor data:", {
       timestamp: processedData.timestamp,
       temperature: processedData.temperature,
       humidity: processedData.humidity,
       power: processedData.power,
-      windSpeed: processedData.windSpeed,
       batteryLevel: processedData.batteryLevel,
       totalEfficiency: processedData.totalEfficiency,
     });
 
     return NextResponse.json({
-      success: true,
-      message: "Sensor data received and processed successfully",
-      data: {
-        id: processedData.id,
-        timestamp: processedData.timestamp,
-        deviceId: processedData.deviceId,
-        batteryLevel: processedData.batteryLevel,
-        totalEfficiency: processedData.totalEfficiency,
-        energyHarvested: processedData.energyHarvested,
-        costSavings: processedData.costSavings,
-        carbonOffset: processedData.carbonOffset,
-      },
+      message: "Sensor data processed successfully",
+      data: processedData,
     });
   } catch (error: unknown) {
     console.error("❌ Error processing sensor data:", error);
-    const errorMessage =
-      error instanceof Error ? error.message : "Internal error";
     return NextResponse.json(
-      {
-        success: false,
-        message: "Internal server error processing sensor data",
-        error:
-          process.env.NODE_ENV === "development"
-            ? errorMessage
-            : "Internal error",
-      },
+      { error: "Failed to process sensor data" },
       { status: 500 }
     );
   }

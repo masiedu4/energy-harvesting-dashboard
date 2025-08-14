@@ -1,8 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { ProcessedSensorData, StreamData } from "@/types/sensor";
-import { Line, Bar, Doughnut } from "react-chartjs-2";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -16,6 +14,13 @@ import {
   Legend,
   Filler,
 } from "chart.js";
+import { Line, Bar, Doughnut } from "react-chartjs-2";
+import {
+  ProcessedSensorData,
+  StreamData,
+  AIPrediction,
+  AIDayForecast,
+} from "@/types/sensor";
 
 // Register Chart.js components
 ChartJS.register(
@@ -32,13 +37,17 @@ ChartJS.register(
 );
 
 export default function RealTimeDashboard() {
+  // State for real-time data
   const [streamData, setStreamData] = useState<StreamData | null>(null);
-  const [fallbackData, setFallbackData] = useState<ProcessedSensorData[]>([]);
-  const [connectionStatus, setConnectionStatus] = useState<
-    "connecting" | "connected" | "error" | "offline"
-  >("offline");
-  const [lastUpdate, setLastUpdate] = useState<string>("");
+  const [fallbackData, setFallbackData] = useState<
+    ProcessedSensorData[] | null
+  >(null);
+
+  const [connectionStatus, setConnectionStatus] =
+    useState<string>("connecting");
   const [error, setError] = useState<string | null>(null);
+
+  const [lastUpdate, setLastUpdate] = useState<string>("");
   const [apiResponse, setApiResponse] = useState<{
     status?: number;
     ok?: boolean;
@@ -46,7 +55,110 @@ export default function RealTimeDashboard() {
     error?: string;
   } | null>(null);
 
+  // AI Prediction state
+  const [aiPrediction, setAiPrediction] = useState<AIPrediction | null>(null);
+  const [dayForecast, setDayForecast] = useState<AIDayForecast | null>(null);
+  const [predictionLoading, setPredictionLoading] = useState(false);
+
   const displayData = streamData || fallbackData;
+
+  // Debug logging
+  console.log("🔍 Dashboard Debug Info:");
+  console.log("  streamData:", streamData);
+  console.log("  fallbackData:", fallbackData);
+  console.log("  displayData:", displayData);
+
+  // Helper function to get current data
+  const getCurrentData = useCallback((): ProcessedSensorData[] | null => {
+    if (
+      streamData &&
+      "sensorData" in streamData &&
+      Array.isArray(streamData.sensorData)
+    ) {
+      return streamData.sensorData;
+    }
+
+    if (fallbackData) {
+      return fallbackData;
+    }
+
+    return null;
+  }, [streamData, fallbackData]);
+
+  // Fetch AI predictions
+  const fetchAIPredictions = useCallback(async () => {
+    const currentData = getCurrentData();
+    if (!currentData) {
+      return;
+    }
+
+    setPredictionLoading(true);
+
+    // Add a timeout to prevent loading state from getting stuck
+    const loadingTimeout = setTimeout(() => {
+      setPredictionLoading(false);
+    }, 10000); // 10 second timeout
+
+    try {
+      // Get current hour prediction
+      const currentResponse = await fetch("/api/sensor/ai?type=current");
+      if (currentResponse.ok) {
+        const currentPred = await currentResponse.json();
+        setAiPrediction(currentPred);
+      }
+
+      // Get day forecast
+      const dayResponse = await fetch("/api/sensor/ai?type=day");
+      if (dayResponse.ok) {
+        const dayPred = await dayResponse.json();
+        setDayForecast(dayPred);
+      }
+    } catch (error: unknown) {
+      console.error("Failed to fetch AI predictions:", error);
+    } finally {
+      clearTimeout(loadingTimeout);
+      setPredictionLoading(false);
+    }
+  }, [getCurrentData]);
+
+  // AI Prediction Chart Data
+  const getAIPredictionChartData = () => {
+    if (!dayForecast?.forecast) return null;
+
+    const labels = dayForecast.forecast.map((h: AIPrediction) => `${h.hr}:00`);
+    const predictedPower = dayForecast.forecast.map(
+      (h: AIPrediction) => h.predicted_power
+    );
+    const actualPower = dayForecast.forecast.map((h: AIPrediction) => {
+      const currentData = getCurrentData();
+      if (!currentData) return 0;
+
+      const actual = currentData.find(
+        (s: ProcessedSensorData) => new Date(s.timestamp).getHours() === h.hr
+      );
+      return actual?.power || 0;
+    });
+
+    return {
+      labels,
+      datasets: [
+        {
+          label: "Predicted Power (mW)",
+          data: predictedPower,
+          borderColor: "rgb(255, 99, 132)",
+          backgroundColor: "rgba(255, 99, 132, 0.1)",
+          tension: 0.1,
+        },
+        {
+          label: "Actual Power (mW)",
+          data: actualPower,
+          borderColor: "rgb(54, 162, 235)",
+          backgroundColor: "rgba(54, 162, 235, 0.1)",
+          tension: 0.1,
+        },
+      ],
+    };
+  };
 
   const connectToStream = useCallback(() => {
     try {
@@ -54,7 +166,6 @@ export default function RealTimeDashboard() {
       setConnectionStatus("connecting");
 
       eventSource.onopen = () => {
-        console.log("🔌 Stream: Connection opened");
         setConnectionStatus("connected");
       };
 
@@ -66,12 +177,6 @@ export default function RealTimeDashboard() {
             setStreamData(data);
             setLastUpdate(new Date().toLocaleTimeString());
             setError(null);
-
-            if (data.message && data.message.includes("update")) {
-              console.log("📡 Stream: Received sensor data update");
-            }
-          } else if (data.message && data.message.includes("Heartbeat")) {
-            console.log(`💓 Stream heartbeat: ${data.message}`);
           }
         } catch (parseError) {
           console.error("Error parsing stream data:", parseError);
@@ -96,17 +201,24 @@ export default function RealTimeDashboard() {
 
   const fetchFallbackData = useCallback(async () => {
     try {
+      console.log("🔄 Fetching fallback data...");
       const response = await fetch("/api/sensor?limit=50");
+      console.log("📡 Response status:", response.status);
       if (response.ok) {
         const data = await response.json();
+        console.log("📊 Received data:", data);
+        console.log("📊 data.data:", data.data);
+        console.log("📊 data.data length:", data.data?.length);
         setFallbackData(data.data || []);
         setLastUpdate(new Date().toLocaleTimeString());
         setError(null);
+        console.log("✅ Fallback data set successfully");
       } else {
+        console.error("❌ Failed to fetch fallback data:", response.status);
         setError("Failed to fetch fallback data");
       }
     } catch (error) {
-      console.error("Error fetching fallback data:", error);
+      console.error("❌ Error fetching fallback data:", error);
       setError("Error fetching fallback data");
     }
   }, []);
@@ -128,7 +240,9 @@ export default function RealTimeDashboard() {
   }, []);
 
   useEffect(() => {
+    console.log("🚀 useEffect triggered - initializing dashboard");
     const eventSource = connectToStream();
+    console.log("🔄 Calling fetchFallbackData...");
     fetchFallbackData();
 
     return () => {
@@ -248,6 +362,17 @@ export default function RealTimeDashboard() {
       },
     },
   };
+
+  // Debug: Check what we have
+  console.log("🔍 Display Data Check:");
+  console.log("  displayData:", displayData);
+  console.log("  Array.isArray(displayData):", Array.isArray(displayData));
+  console.log(
+    "  displayData.length:",
+    Array.isArray(displayData) ? displayData.length : "N/A"
+  );
+  console.log("  fallbackData:", fallbackData);
+  console.log("  streamData:", streamData);
 
   if (
     !displayData ||
@@ -597,51 +722,6 @@ export default function RealTimeDashboard() {
           </div>
         </div>
 
-        {/* Energy & Cost Analysis */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-green-500">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Energy Harvested
-            </h3>
-            <div className="text-center">
-              <p className="text-3xl font-bold text-green-600">
-                {currentData.energyHarvested?.toFixed(2) || "0.00"} kWh
-              </p>
-              <p className="text-sm text-gray-600 mt-2">
-                Total energy generated today
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-blue-500">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Cost Savings
-            </h3>
-            <div className="text-center">
-              <p className="text-3xl font-bold text-blue-600">
-                ${currentData.costSavings?.toFixed(2) || "0.00"}
-              </p>
-              <p className="text-sm text-gray-600 mt-2">
-                Money saved on electricity
-              </p>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-purple-500">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Carbon Offset
-            </h3>
-            <div className="text-center">
-              <p className="text-3xl font-bold text-purple-600">
-                {currentData.carbonOffset?.toFixed(2) || "0.00"} kg
-              </p>
-              <p className="text-sm text-gray-600 mt-2">
-                CO₂ emissions avoided
-              </p>
-            </div>
-          </div>
-        </div>
-
         {/* Device Status & Controls */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           {/* Device Status */}
@@ -784,6 +864,167 @@ export default function RealTimeDashboard() {
             </pre>
           </div>
         )}
+
+        {/* AI Predictions Section */}
+        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
+            🤖 AI Solar Predictions
+            <button
+              onClick={fetchAIPredictions}
+              disabled={predictionLoading}
+              className="ml-auto px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 disabled:opacity-50"
+            >
+              {predictionLoading ? "Loading..." : "Refresh"}
+            </button>
+          </h2>
+
+          {/* Debug Info */}
+          <div className="mb-4 p-3 bg-gray-100 rounded text-sm">
+            <p>
+              <strong>Debug Info:</strong>
+            </p>
+            <p>AI Prediction: {aiPrediction ? "✅ Loaded" : "❌ Not loaded"}</p>
+            <p>Day Forecast: {dayForecast ? "✅ Loaded" : "❌ Not loaded"}</p>
+            <p>Loading: {predictionLoading ? "🔄 Yes" : "✅ No"}</p>
+            <div className="flex space-x-2 mt-2">
+              <button
+                onClick={() => {
+                  console.log("Manual AI fetch triggered");
+                  fetchAIPredictions();
+                }}
+                className="px-2 py-1 bg-yellow-500 text-white rounded text-xs"
+              >
+                Force AI Fetch
+              </button>
+              <button
+                onClick={() => {
+                  console.log("Manual loading state reset");
+                  setPredictionLoading(false);
+                }}
+                className="px-2 py-1 bg-red-500 text-white rounded text-xs"
+              >
+                Reset Loading
+              </button>
+            </div>
+          </div>
+
+          {aiPrediction && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+              <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-blue-800">
+                  Predicted Power
+                </h3>
+                <p className="text-2xl font-bold text-blue-900">
+                  {aiPrediction.predicted_power.toFixed(1)} mW
+                </p>
+              </div>
+
+              <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-green-800">
+                  Weather Conditions
+                </h3>
+                <p className="text-lg font-semibold text-green-900">
+                  {aiPrediction.irradiance > 600
+                    ? "Sunny"
+                    : aiPrediction.irradiance > 400
+                    ? "Partly Cloudy"
+                    : aiPrediction.irradiance > 200
+                    ? "Cloudy"
+                    : "Overcast"}
+                </p>
+              </div>
+
+              <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-purple-800">
+                  Temperature
+                </h3>
+                <p className="text-2xl font-bold text-purple-900">
+                  {aiPrediction.temperature.toFixed(1)}°C
+                </p>
+              </div>
+
+              <div className="bg-gradient-to-r from-orange-50 to-orange-100 p-4 rounded-lg">
+                <h3 className="text-sm font-medium text-orange-800">
+                  Humidity
+                </h3>
+                <p className="text-2xl font-bold text-orange-900">
+                  {aiPrediction.humidity.toFixed(1)}%
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* AI vs Actual Comparison Chart */}
+          {getAIPredictionChartData() && (
+            <div className="mb-6">
+              <h3 className="text-lg font-semibold text-gray-700 mb-3">
+                AI Prediction vs Actual Performance
+              </h3>
+              <div className="h-64">
+                <Line
+                  data={getAIPredictionChartData()!}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: {
+                        position: "top" as const,
+                      },
+                      title: {
+                        display: true,
+                        text: "24-Hour Power Prediction vs Actual",
+                      },
+                    },
+                    scales: {
+                      y: {
+                        beginAtZero: true,
+                        title: {
+                          display: true,
+                          text: "Power (mW)",
+                        },
+                      },
+                      x: {
+                        title: {
+                          display: true,
+                          text: "Hour of Day",
+                        },
+                      },
+                    },
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Prediction Accuracy */}
+          {(() => {
+            const currentData = getCurrentData();
+            const firstData = currentData?.[0];
+            return firstData?.predictionAccuracy ? (
+              <div className="bg-gradient-to-r from-indigo-50 to-indigo-100 p-4 rounded-lg">
+                <h3 className="text-lg font-semibold text-indigo-800 mb-2">
+                  AI Prediction Accuracy
+                </h3>
+                <div className="flex items-center space-x-4">
+                  <div className="text-center">
+                    <p className="text-3xl font-bold text-indigo-900">
+                      {firstData.predictionAccuracy.toFixed(1)}%
+                    </p>
+                    <p className="text-sm text-indigo-700">Accuracy</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-indigo-900">
+                      {firstData.efficiencyVsPrediction?.toFixed(1) || 0}%
+                    </p>
+                    <p className="text-sm text-indigo-700">
+                      Efficiency vs Prediction
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null;
+          })()}
+        </div>
       </div>
     </div>
   );

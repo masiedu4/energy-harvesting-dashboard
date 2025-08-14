@@ -6,11 +6,13 @@ A professional, real-time monitoring system for solar and wind energy harvesting
 
 - **Real-time Data Streaming**: Server-Sent Events (SSE) for live sensor data updates
 - **ESP32 Integration**: Direct compatibility with ESP32 sensor arrays
-- **Professional Dashboard**: Beautiful, responsive UI with real-time metrics
+- **AI-Powered Predictions**: Machine learning solar power predictions using your solar-predictor service
+- **Professional Dashboard**: Beautiful, responsive UI with real-time metrics and AI insights
 - **Data Processing**: Automatic calculation of efficiency, cost savings, and carbon offset
 - **Device Monitoring**: Connection quality, battery status, and system health
 - **Data Validation**: Comprehensive input validation and error handling
 - **Test Environment**: Built-in testing tools for development and debugging
+- **Smart Analytics**: AI prediction accuracy tracking and performance comparison
 
 ## 🏗️ Architecture
 
@@ -41,6 +43,37 @@ interface ESP32SensorData {
 }
 ```
 
+## 🤖 AI Integration
+
+This dashboard integrates with your **solar-predictor** AI service to provide intelligent solar energy predictions and insights.
+
+### AI Features
+
+- **Real-time Predictions**: Current hour solar power predictions based on weather and sensor data
+- **24-Hour Forecasting**: Complete day predictions with weather data integration
+- **Prediction Accuracy**: Track how well AI predictions match actual performance
+- **Smart Analytics**: Compare predicted vs actual efficiency and power output
+- **Weather Correlation**: Understand how environmental conditions affect predictions
+
+### Quick Setup
+
+1. **Start your solar-predictor service:**
+
+   ```bash
+   cd /path/to/solar-predictor
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+2. **Set environment variable:**
+
+   ```bash
+   NEXT_PUBLIC_SOLAR_PREDICTOR_URL=http://localhost:8000
+   ```
+
+3. **View AI predictions in the dashboard!**
+
+For detailed integration instructions, see [AI_INTEGRATION.md](./AI_INTEGRATION.md).
+
 ## 🛠️ Installation
 
 1. **Clone the repository**
@@ -58,8 +91,8 @@ interface ESP32SensorData {
 
 3. **Run the development server**
 
-   ```bash
-   npm run dev
+```bash
+npm run dev
    ```
 
 4. **Open your browser**
@@ -295,6 +328,65 @@ Visit `/test` to access the built-in testing environment:
 - Data quality indicators
 - System uptime tracking
 
+## 🚀 Deployment
+
+### Vercel Deployment (Recommended)
+
+1. **Push your code to GitHub**
+
+   ```bash
+   git add .
+   git commit -m "Ready for deployment"
+   git push origin main
+   ```
+
+2. **Deploy to Vercel**
+
+   - Connect your GitHub repository to [Vercel](https://vercel.com)
+   - Vercel will automatically detect Next.js and build your project
+   - Set environment variables in Vercel dashboard
+
+3. **Environment Variables**
+   Create a `.env.local` file or set in Vercel dashboard:
+   ```bash
+   NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
+
+### Manual Deployment
+
+1. **Build the project**
+
+   ```bash
+   npm run build
+   npm start
+   ```
+
+2. **Environment setup**
+   ```bash
+   cp env.example .env.local
+   # Edit .env.local with your actual values
+   ```
+
+### Supabase Setup
+
+1. **Create Supabase project**
+
+   - Go to [supabase.com](https://supabase.com)
+   - Create new project
+   - Get your project URL and anon key
+
+2. **Run migrations**
+
+   ```bash
+   supabase migration new create_sensor_data_tables
+   supabase db push
+   ```
+
+3. **Set up CI/CD**
+   - Add GitHub secrets for automated deployments
+   - See `.github/workflows/supabase-migrations.yml`
+
 ## 🔧 Configuration
 
 ### Environment Variables
@@ -321,35 +413,6 @@ OFFLINE_THRESHOLD=300000
 - **Retention**: 24 hours of historical data
 - **Configurable**: Adjustable via environment variables
 - **Analysis**: Comprehensive statistics including min/max values, trends, and hourly averages
-
-## 🚀 Deployment
-
-### Production Build
-
-```bash
-npm run build
-npm start
-```
-
-### Docker Deployment
-
-```dockerfile
-FROM node:18-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-RUN npm run build
-EXPOSE 3000
-CMD ["npm", "start"]
-```
-
-### Environment Considerations
-
-- **Memory**: Minimum 512MB RAM
-- **Storage**: 1GB+ for data storage
-- **Network**: Stable internet connection for ESP32 communication
-- **Security**: Consider HTTPS for production deployments
 
 ## 📈 Performance
 

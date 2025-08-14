@@ -1,5 +1,37 @@
-import { ProcessedSensorData, DeviceStatus } from "@/types/sensor";
-import { supabase, SensorDataRow } from "./supabase";
+import {
+  ESP32SensorData,
+  ProcessedSensorData,
+  DeviceStatus,
+} from "../types/sensor";
+import { supabase } from "./supabase";
+import { mockAIService } from "./mockAIService";
+
+// Supabase row interfaces
+interface SensorDataRow {
+  id: string;
+  device_id: string;
+  timestamp: string;
+  temperature: number | null;
+  humidity: number | null;
+  light_status: string | null;
+  wind_speed: number | null;
+  potential_wind_power: number | null;
+  bus_voltage: number | null;
+  current: number | null;
+  power: number | null;
+  battery_level: number | null;
+  solar_efficiency: number | null;
+  wind_efficiency: number | null;
+  total_efficiency: number | null;
+  energy_harvested: number | null;
+  cost_savings: number | null;
+  carbon_offset: number | null;
+  is_online: boolean | null;
+  connection_quality: string | null;
+  ai_prediction?: string | null;
+  prediction_accuracy?: number | null;
+  efficiency_vs_prediction?: number | null;
+}
 
 class SensorDataService {
   private sensorData: ProcessedSensorData[] = [];
@@ -26,6 +58,11 @@ class SensorDataService {
    * Load initial data from Supabase
    */
   private async loadInitialData(): Promise<void> {
+    if (!supabase) {
+      console.warn("Supabase client not available, skipping initial data load");
+      return;
+    }
+
     try {
       // Load recent sensor data
       const { data: sensorData, error: sensorError } = await supabase
@@ -89,8 +126,8 @@ class SensorDataService {
   ): ProcessedSensorData {
     return {
       id: row.id,
-      deviceId: row.device_id,
       timestamp: row.timestamp,
+      deviceId: row.device_id,
       temperature: row.temperature || 0,
       humidity: row.humidity || 0,
       lightStatus: row.light_status || "Unknown",
@@ -107,10 +144,14 @@ class SensorDataService {
       costSavings: row.cost_savings || 0,
       carbonOffset: row.carbon_offset || 0,
       isOnline: row.is_online || false,
-      lastSeen: row.timestamp,
       connectionQuality:
         (row.connection_quality as "excellent" | "good" | "fair" | "poor") ||
         "good",
+      aiPrediction: row.ai_prediction
+        ? JSON.parse(row.ai_prediction)
+        : undefined,
+      predictionAccuracy: row.prediction_accuracy || undefined,
+      efficiencyVsPrediction: row.efficiency_vs_prediction || undefined,
     };
   }
 
@@ -140,6 +181,11 @@ class SensorDataService {
       carbon_offset: data.carbonOffset,
       is_online: data.isOnline,
       connection_quality: data.connectionQuality || "good",
+      ai_prediction: data.aiPrediction
+        ? JSON.stringify(data.aiPrediction)
+        : undefined,
+      prediction_accuracy: data.predictionAccuracy || undefined,
+      efficiency_vs_prediction: data.efficiencyVsPrediction || undefined,
     };
   }
 
@@ -147,6 +193,11 @@ class SensorDataService {
    * Save sensor data to Supabase
    */
   private async saveToSupabase(data: ProcessedSensorData): Promise<void> {
+    if (!supabase) {
+      console.warn("Supabase client not available, skipping save");
+      return;
+    }
+
     try {
       const supabaseRow = this.convertToSupabaseRow(data);
 
@@ -168,6 +219,11 @@ class SensorDataService {
   private async updateDeviceStatusInSupabase(
     status: DeviceStatus
   ): Promise<void> {
+    if (!supabase) {
+      console.warn("Supabase client not available, skipping status update");
+      return;
+    }
+
     try {
       const { error } = await supabase.from("device_status").upsert(
         {
@@ -221,64 +277,126 @@ class SensorDataService {
   }
 
   /**
-   * Process incoming sensor data from ESP32
+   * Process incoming sensor data and calculate derived metrics
    */
-  processSensorData(esp32Data: {
-    temperature?: number;
-    humidity?: number;
-    lightStatus?: string;
-    windSpeed?: number;
-    potentialWindPower?: number;
-    busVoltage?: number;
-    current?: number;
-    power?: number;
-  }): ProcessedSensorData {
-    const processedData: ProcessedSensorData = {
-      id: crypto.randomUUID(),
-      deviceId: this.DEVICE_ID,
-      timestamp: new Date().toISOString(),
-      temperature: esp32Data.temperature || 0,
-      humidity: esp32Data.humidity || 0,
-      lightStatus: esp32Data.lightStatus || "Unknown",
-      windSpeed: esp32Data.windSpeed || 0,
-      potentialWindPower: esp32Data.potentialWindPower || 0,
-      busVoltage: esp32Data.busVoltage || 0,
-      current: esp32Data.current || 0,
-      power: esp32Data.power || 0,
-      batteryLevel: this.calculateBatteryLevel(esp32Data.busVoltage || 0),
-      solarEfficiency: this.calculateSolarEfficiency(esp32Data),
-      windEfficiency: this.calculateWindEfficiency(esp32Data),
-      totalEfficiency: 0, // Will be calculated below
-      energyHarvested: 0, // Will be calculated below
-      costSavings: 0, // Will be calculated below
-      carbonOffset: 0, // Will be calculated below
-      isOnline: true,
-      lastSeen: new Date().toISOString(),
-      connectionQuality: "good",
-    };
+  async processSensorData(
+    rawData: ESP32SensorData
+  ): Promise<ProcessedSensorData> {
+    try {
+      // Generate mock AI prediction
+      const aiPrediction = await mockAIService.getPredictionFromSensor({
+        id: "",
+        timestamp: new Date().toISOString(),
+        deviceId: "ESP32_001",
+        temperature: rawData.temperature,
+        humidity: rawData.humidity,
+        lightStatus: rawData.lightStatus,
+        windSpeed: rawData.windSpeed,
+        potentialWindPower: rawData.potentialWindPower,
+        busVoltage: rawData.busVoltage,
+        current: rawData.current,
+        power: rawData.power,
+        batteryLevel: 0, // Will be calculated below
+        solarEfficiency: 0, // Will be calculated below
+        windEfficiency: 0, // Will be calculated below
+        totalEfficiency: 0, // Will be calculated below
+        energyHarvested: 0, // Will be calculated below
+        costSavings: 0, // Will be calculated below
+        carbonOffset: 0, // Will be calculated below
+        isOnline: true,
+        connectionQuality: "excellent",
+      });
 
-    // Calculate derived metrics
-    processedData.totalEfficiency =
-      this.calculateTotalEfficiency(processedData);
-    processedData.energyHarvested =
-      this.calculateEnergyHarvested(processedData);
-    processedData.costSavings = this.calculateCostSavings(processedData);
-    processedData.carbonOffset = this.calculateCarbonOffset(processedData);
+      // Calculate derived metrics
+      const batteryLevel = this.calculateBatteryLevel(rawData.busVoltage);
+      const solarEfficiency = this.calculateSolarEfficiency(
+        rawData.power,
+        rawData.lightStatus
+      );
+      const windEfficiency = this.calculateWindEfficiency(rawData.windSpeed);
+      const totalEfficiency = Math.round(
+        (solarEfficiency + windEfficiency) / 2
+      );
 
-    // Store in memory
-    this.storeSensorData(processedData);
+      // Calculate energy harvested (kWh per second)
+      const energyHarvested = (rawData.power / 1000) * (1 / 3600);
 
-    // Update device status
-    this.updateDeviceStatus(processedData);
+      // Calculate cost savings (assuming $0.12 per kWh)
+      const costSavings = energyHarvested * 0.12;
 
-    // Save to Supabase
-    this.saveToSupabase(processedData);
-    this.updateDeviceStatusInSupabase(this.deviceStatus.get(this.DEVICE_ID)!);
+      // Calculate carbon offset (assuming 0.92 kg CO2 per kWh)
+      const carbonOffset = energyHarvested * 0.92;
 
-    // Notify listeners
-    this.notifyListeners(processedData);
+      // Calculate AI prediction accuracy and efficiency comparison
+      let predictionAccuracy: number | undefined;
+      let efficiencyVsPrediction: number | undefined;
 
-    return processedData;
+      if (aiPrediction) {
+        predictionAccuracy = mockAIService.calculatePredictionAccuracy(
+          rawData.power,
+          aiPrediction.predicted_power
+        );
+        efficiencyVsPrediction = mockAIService.calculateEfficiencyVsPrediction(
+          totalEfficiency,
+          aiPrediction.predicted_power,
+          rawData.power
+        );
+      }
+
+      const processedData: ProcessedSensorData = {
+        id: this.generateId(),
+        timestamp: new Date().toISOString(),
+        deviceId: "ESP32_001",
+        temperature: rawData.temperature,
+        humidity: rawData.humidity,
+        lightStatus: rawData.lightStatus,
+        windSpeed: rawData.windSpeed,
+        potentialWindPower: rawData.potentialWindPower,
+        busVoltage: rawData.busVoltage,
+        current: rawData.current,
+        power: rawData.power,
+        batteryLevel,
+        solarEfficiency,
+        windEfficiency,
+        totalEfficiency,
+        energyHarvested,
+        costSavings,
+        carbonOffset,
+        isOnline: true,
+        connectionQuality: this.assessConnectionQuality(rawData),
+        aiPrediction: aiPrediction || undefined,
+        predictionAccuracy,
+        efficiencyVsPrediction,
+      };
+
+      // Store the processed data
+      this.storeSensorData(processedData);
+
+      // Update device status
+      await this.updateDeviceStatus(processedData);
+
+      // Save to Supabase if available
+      if (supabase) {
+        await this.saveToSupabase(processedData);
+      }
+
+      // Notify listeners for real-time updates
+      this.notifyListeners(processedData);
+
+      console.log(
+        `📊 Processed sensor data: ${rawData.power}mW, ${totalEfficiency}% efficiency`
+      );
+      if (aiPrediction) {
+        console.log(
+          `🤖 Mock AI Prediction: ${predictionAccuracy?.toFixed(1)}% accurate`
+        );
+      }
+
+      return processedData;
+    } catch (error: unknown) {
+      console.error("Error processing sensor data:", error);
+      throw error;
+    }
   }
 
   /**
@@ -300,12 +418,15 @@ class SensorDataService {
     const status: DeviceStatus = {
       deviceId: data.deviceId,
       isOnline: data.isOnline,
-      lastSeen: data.lastSeen,
+      lastSeen: data.timestamp,
       batteryLevel: data.batteryLevel,
-      connectionQuality: this.assessConnectionQuality(data),
+      connectionQuality: data.connectionQuality,
     };
 
     this.deviceStatus.set(data.deviceId, status);
+
+    // Update in Supabase
+    this.updateDeviceStatusInSupabase(status);
   }
 
   /**
@@ -321,13 +442,10 @@ class SensorDataService {
   /**
    * Calculate solar efficiency
    */
-  private calculateSolarEfficiency(data: {
-    lightStatus?: string;
-    power?: number;
-  }): number {
-    // Simple calculation based on light status and power
-    if (data.lightStatus && data.lightStatus.includes("Light available")) {
-      return Math.min(100, ((data.power || 0) / 1000) * 100); // Normalize to percentage
+  private calculateSolarEfficiency(power: number, lightStatus: string): number {
+    // Simple calculation based on power output
+    if (power > 0 && (lightStatus === "bright" || lightStatus === "good")) {
+      return Math.min(25, (power / 1000) * 100); // Normalize to percentage, max 25%
     }
     return 0;
   }
@@ -335,10 +453,13 @@ class SensorDataService {
   /**
    * Calculate wind efficiency
    */
-  private calculateWindEfficiency(data: { windSpeed?: number }): number {
-    // Simple calculation based on wind speed
-    if (data.windSpeed && data.windSpeed > 0) {
-      return Math.min(100, (data.windSpeed / 20) * 100); // Normalize to percentage
+  private calculateWindEfficiency(windSpeed: number): number {
+    // Simple calculation based on potential wind power and wind speed
+    if (windSpeed > 0) {
+      return Math.min(
+        100,
+        (windSpeed / 10) * 100 // Normalize to percentage
+      );
     }
     return 0;
   }
@@ -346,16 +467,19 @@ class SensorDataService {
   /**
    * Calculate total efficiency
    */
-  private calculateTotalEfficiency(data: ProcessedSensorData): number {
-    return Math.round((data.solarEfficiency + data.windEfficiency) / 2);
+  private calculateTotalEfficiency(
+    solarEfficiency: number,
+    windEfficiency: number
+  ): number {
+    return Math.round((solarEfficiency + windEfficiency) / 2);
   }
 
   /**
    * Calculate energy harvested
    */
-  private calculateEnergyHarvested(data: ProcessedSensorData): number {
+  private calculateEnergyHarvested(power: number): number {
     // Convert power (mW) to energy (kWh) over time
-    const powerInWatts = data.power / 1000;
+    const powerInWatts = power / 1000;
     const timeInHours = 1; // Assuming 1 hour intervals
     return (powerInWatts * timeInHours) / 1000; // Convert to kWh
   }
@@ -363,31 +487,38 @@ class SensorDataService {
   /**
    * Calculate cost savings
    */
-  private calculateCostSavings(data: ProcessedSensorData): number {
+  private calculateCostSavings(energyHarvested: number): number {
     // Assume $0.12 per kWh
     const electricityRate = 0.12;
-    return data.energyHarvested * electricityRate;
+    return energyHarvested * electricityRate;
   }
 
   /**
    * Calculate carbon offset
    */
-  private calculateCarbonOffset(data: ProcessedSensorData): number {
+  private calculateCarbonOffset(energyHarvested: number): number {
     // Assume 0.92 kg CO2 per kWh saved
     const carbonFactor = 0.92;
-    return data.energyHarvested * carbonFactor;
+    return energyHarvested * carbonFactor;
   }
 
   /**
    * Assess connection quality
    */
   private assessConnectionQuality(
-    data: ProcessedSensorData
+    data: ESP32SensorData
   ): "excellent" | "good" | "fair" | "poor" {
     if (data.power > 1000) return "excellent";
     if (data.power > 500) return "good";
     if (data.power > 100) return "fair";
     return "poor";
+  }
+
+  /**
+   * Generate a unique ID for new data
+   */
+  private generateId(): string {
+    return crypto.randomUUID();
   }
 
   /**

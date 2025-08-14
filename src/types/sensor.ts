@@ -21,9 +21,18 @@ export interface ESP32SensorData {
   power: number;
 }
 
-export interface ProcessedSensorData extends SensorData {
+export interface ProcessedSensorData {
   id: string;
+  timestamp: string;
   deviceId: string;
+  temperature: number;
+  humidity: number;
+  lightStatus: string;
+  windSpeed: number;
+  potentialWindPower: number;
+  busVoltage: number;
+  current: number;
+  power: number;
   batteryLevel: number;
   solarEfficiency: number;
   windEfficiency: number;
@@ -32,8 +41,11 @@ export interface ProcessedSensorData extends SensorData {
   costSavings: number;
   carbonOffset: number;
   isOnline: boolean;
-  lastSeen: string;
   connectionQuality: "excellent" | "good" | "fair" | "poor";
+  // AI Prediction fields
+  aiPrediction?: AIPrediction;
+  predictionAccuracy?: number;
+  efficiencyVsPrediction?: number;
 }
 
 export interface EnergyMetrics {
@@ -79,4 +91,26 @@ export interface StreamData {
     avgEfficiency: number;
   } | null;
   message: string;
+}
+
+export interface AIPrediction {
+  source: string;
+  temperature: number;
+  irradiance: number;
+  humidity: number;
+  hr: number;
+  hr_sin: number;
+  hr_cos: number;
+  predicted_power: number;
+}
+
+export interface AIDayForecast {
+  source: string;
+  forecast: AIPrediction[];
+}
+
+export interface EnhancedSensorData extends ProcessedSensorData {
+  aiPrediction?: AIPrediction;
+  predictionAccuracy?: number;
+  efficiencyVsPrediction?: number;
 }

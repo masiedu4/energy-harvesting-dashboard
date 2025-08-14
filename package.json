@@ -3,10 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "populate-mock": "node scripts/populate-mock-data.js",
+    "populate-local": "node scripts/populate-local-only.js",
+    "populate-ai": "node scripts/populate-with-ai.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.55.0",
