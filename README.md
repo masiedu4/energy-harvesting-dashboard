@@ -93,7 +93,7 @@ For detailed integration instructions, see [AI_INTEGRATION.md](./AI_INTEGRATION.
 
 ```bash
 npm run dev
-   ```
+```
 
 4. **Open your browser**
    Navigate to [http://localhost:3000](http://localhost:3000)
