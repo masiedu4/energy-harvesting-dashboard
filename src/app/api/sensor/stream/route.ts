@@ -113,7 +113,8 @@ export async function POST(request: NextRequest) {
       },
       { status: 400 }
     );
-  } catch (error) {
+  } catch (error: unknown) {
+    console.error("Error configuring stream:", error);
     return NextResponse.json(
       {
         success: false,

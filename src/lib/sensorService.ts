@@ -1,5 +1,5 @@
 import { ProcessedSensorData, DeviceStatus } from "@/types/sensor";
-import { supabase, SensorDataRow, DeviceStatusRow } from "./supabase";
+import { supabase, SensorDataRow } from "./supabase";
 
 class SensorDataService {
   private sensorData: ProcessedSensorData[] = [];
@@ -25,23 +25,26 @@ class SensorDataService {
   /**
    * Load initial data from Supabase
    */
-  private async loadInitialData() {
+  private async loadInitialData(): Promise<void> {
     try {
       // Load recent sensor data
       const { data: sensorData, error: sensorError } = await supabase
         .from("sensor_data")
         .select("*")
-        .eq("device_id", this.DEVICE_ID)
         .order("timestamp", { ascending: false })
         .limit(this.maxDataPoints);
 
       if (sensorError) {
         console.error("Error loading sensor data from Supabase:", sensorError);
       } else if (sensorData) {
-        // Convert Supabase data to ProcessedSensorData
-        this.sensorData = sensorData.map(this.convertSupabaseToProcessedData);
+        // Convert and store the data
+        const processedData = sensorData
+          .map((row) => this.convertSupabaseToProcessedData(row))
+          .reverse(); // Reverse to maintain chronological order
+
+        this.sensorData = processedData;
         console.log(
-          `📊 Loaded ${this.sensorData.length} sensor readings from Supabase`
+          `📊 Loaded ${processedData.length} sensor data points from Supabase`
         );
       }
 
@@ -60,19 +63,20 @@ class SensorDataService {
       } else if (deviceData) {
         const status: DeviceStatus = {
           deviceId: deviceData.device_id,
-          isOnline: deviceData.is_online,
-          lastSeen: deviceData.last_seen,
-          batteryLevel: deviceData.battery_level,
-          connectionQuality: deviceData.connection_quality as
-            | "excellent"
-            | "good"
-            | "fair"
-            | "poor",
+          isOnline: deviceData.is_online || false,
+          lastSeen: deviceData.last_seen || new Date().toISOString(),
+          batteryLevel: deviceData.battery_level || 0,
+          connectionQuality:
+            (deviceData.connection_quality as
+              | "excellent"
+              | "good"
+              | "fair"
+              | "poor") || "good",
         };
         this.deviceStatus.set(this.DEVICE_ID, status);
         console.log("📱 Loaded device status from Supabase");
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error loading initial data from Supabase:", error);
     }
   }
@@ -153,7 +157,7 @@ class SensorDataService {
       } else {
         console.log("💾 Saved sensor data to Supabase");
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error saving to Supabase:", error);
     }
   }
@@ -183,7 +187,7 @@ class SensorDataService {
       } else {
         console.log("📱 Updated device status in Supabase");
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error updating device status in Supabase:", error);
     }
   }
@@ -210,7 +214,7 @@ class SensorDataService {
     this.dataListeners.forEach((listener) => {
       try {
         listener(data);
-      } catch (error) {
+      } catch (error: unknown) {
         console.error("Error in data listener:", error);
       }
     });

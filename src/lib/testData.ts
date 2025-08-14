@@ -70,7 +70,6 @@ export function generateTestDataSequence(count: number): ESP32SensorData[] {
   for (let i = 0; i < count; i++) {
     // Add some time variation to make it more realistic
     const timeOffset = i * 5000; // 5 seconds between readings
-    const testTime = new Date(Date.now() - timeOffset);
 
     const testData = generateTestSensorData();
     data.push(testData);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { ProcessedSensorData, DeviceStatus, StreamData } from "@/types/sensor";
+import { ProcessedSensorData, StreamData } from "@/types/sensor";
 import { Line, Bar, Doughnut } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -34,7 +34,6 @@ ChartJS.register(
 export default function RealTimeDashboard() {
   const [streamData, setStreamData] = useState<StreamData | null>(null);
   const [fallbackData, setFallbackData] = useState<ProcessedSensorData[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<
     "connecting" | "connected" | "error" | "offline"
   >("offline");
@@ -57,7 +56,6 @@ export default function RealTimeDashboard() {
       eventSource.onopen = () => {
         console.log("🔌 Stream: Connection opened");
         setConnectionStatus("connected");
-        setIsConnected(true);
       };
 
       eventSource.onmessage = (event) => {
@@ -68,16 +66,12 @@ export default function RealTimeDashboard() {
             setStreamData(data);
             setLastUpdate(new Date().toLocaleTimeString());
             setError(null);
-            setIsConnected(true);
-            setConnectionStatus("connected");
 
             if (data.message && data.message.includes("update")) {
               console.log("📡 Stream: Received sensor data update");
             }
           } else if (data.message && data.message.includes("Heartbeat")) {
             console.log(`💓 Stream heartbeat: ${data.message}`);
-            setIsConnected(true);
-            setConnectionStatus("connected");
           }
         } catch (parseError) {
           console.error("Error parsing stream data:", parseError);
@@ -88,7 +82,6 @@ export default function RealTimeDashboard() {
       eventSource.onerror = (event) => {
         console.error("EventSource error:", event);
         setConnectionStatus("error");
-        setIsConnected(false);
         setError("Stream connection error");
       };
 
@@ -153,7 +146,6 @@ export default function RealTimeDashboard() {
         const now = Date.now();
         if (now - lastUpdateTime > 30000) {
           setConnectionStatus("error");
-          setIsConnected(false);
         }
       }
     }, 10000);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sensorService } from "@/lib/sensorService";
+import { DeviceStatus } from "@/types/sensor";
 
 export async function GET() {
   try {
@@ -19,15 +20,17 @@ export async function GET() {
     };
 
     return NextResponse.json(response);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("❌ Error retrieving device status:", error);
+    const errorMessage =
+      error instanceof Error ? error.message : "Internal error";
     return NextResponse.json(
       {
         success: false,
         message: "Error retrieving device status",
         error:
           process.env.NODE_ENV === "development"
-            ? error.message
+            ? errorMessage
             : "Internal error",
       },
       { status: 500 }
@@ -38,7 +41,7 @@ export async function GET() {
 /**
  * Calculate system uptime based on device status
  */
-function calculateUptime(deviceStatus: any[]): string {
+function calculateUptime(deviceStatus: DeviceStatus[]): string {
   const onlineDevices = deviceStatus.filter((device) => device.isOnline);
   const totalDevices = deviceStatus.length;
 
@@ -51,27 +54,30 @@ function calculateUptime(deviceStatus: any[]): string {
 /**
  * Assess overall data quality based on statistics
  */
-function assessDataQuality(
-  statistics: any
-): "excellent" | "good" | "fair" | "poor" {
+function assessDataQuality(statistics: {
+  totalReadings: number;
+  avgTemperature: number;
+  avgPower: number;
+  avgEfficiency: number;
+}): "excellent" | "good" | "fair" | "poor" {
   if (statistics.totalReadings === 0) return "poor";
 
   // Simple heuristic based on data consistency
   if (
-    statistics.averageTemperature > -50 &&
-    statistics.averageTemperature < 100 &&
-    statistics.averageHumidity >= 0 &&
-    statistics.averageHumidity <= 100
+    statistics.avgTemperature > -50 &&
+    statistics.avgTemperature < 100 &&
+    statistics.avgPower >= 0 &&
+    statistics.avgPower <= 1000
   ) {
     return "excellent";
   } else if (
-    statistics.averageTemperature > -100 &&
-    statistics.averageTemperature < 150
+    statistics.avgTemperature > -100 &&
+    statistics.avgTemperature < 150
   ) {
     return "good";
   } else if (
-    statistics.averageTemperature > -200 &&
-    statistics.averageTemperature < 200
+    statistics.avgTemperature > -200 &&
+    statistics.avgTemperature < 200
   ) {
     return "fair";
   } else {
