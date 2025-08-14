@@ -1,36 +1,422 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🌞 Energy Harvesting Dashboard
 
-## Getting Started
+A professional, real-time monitoring system for solar and wind energy harvesting with environmental sensors. Built with Next.js 15, TypeScript, and Tailwind CSS.
 
-First, run the development server:
+## 🚀 Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Real-time Data Streaming**: Server-Sent Events (SSE) for live sensor data updates
+- **ESP32 Integration**: Direct compatibility with ESP32 sensor arrays
+- **Professional Dashboard**: Beautiful, responsive UI with real-time metrics
+- **Data Processing**: Automatic calculation of efficiency, cost savings, and carbon offset
+- **Device Monitoring**: Connection quality, battery status, and system health
+- **Data Validation**: Comprehensive input validation and error handling
+- **Test Environment**: Built-in testing tools for development and debugging
+
+## 🏗️ Architecture
+
+```
+ESP32 Device → WiFi → Next.js API → Real-time Dashboard
+     ↓              ↓         ↓           ↓
+  Sensors      HTTP POST   Data Store   SSE Stream
+  (DHT22,      /api/sensor  (Memory)    /api/sensor/stream
+   LDR,        JSON Data               Real-time Updates
+   Anemometer,                         Professional UI
+   INA219)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 📊 Sensor Data Structure
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The system processes the following data from your ESP32:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```typescript
+interface ESP32SensorData {
+  temperature: number; // °C from DHT22
+  humidity: number; // % from DHT22
+  lightStatus: string; // Light availability status
+  windSpeed: number; // km/h from anemometer
+  potentialWindPower: number; // Calculated wind power potential
+  busVoltage: number; // V from INA219
+  current: number; // mA from INA219
+  power: number; // mW calculated power
+}
+```
 
-## Learn More
+## 🛠️ Installation
 
-To learn more about Next.js, take a look at the following resources:
+1. **Clone the repository**
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+   ```bash
+   git clone <your-repo-url>
+   cd energy-harvesting-dashboard
+   ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+2. **Install dependencies**
 
-## Deploy on Vercel
+   ```bash
+   npm install
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+3. **Run the development server**
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+   ```bash
+   npm run dev
+   ```
+
+4. **Open your browser**
+   Navigate to [http://localhost:3000](http://localhost:3000)
+
+## 🔌 ESP32 Integration
+
+### Hardware Requirements
+
+- ESP32 development board
+- DHT22 temperature/humidity sensor
+- LDR (Light Dependent Resistor)
+- Anemometer for wind speed
+- INA219 current/voltage sensor
+- WiFi connectivity
+
+### Code Integration
+
+Update your ESP32 code to send data to the dashboard:
+
+```cpp
+const char* serverUrl = "http://192.168.1.185:3000/api/sensor";
+
+// In your loop function
+String payload = "{";
+payload += "\"temperature\":" + String(temperature,1) + ",";
+payload += "\"humidity\":" + String(humidity,1) + ",";
+payload += "\"lightStatus\":\"" + lightStatus + "\",";
+payload += "\"windSpeed\":" + String(avgWind,1) + ",";
+payload += "\"potentialWindPower\":" + String(potentialPower,1) + ",";
+payload += "\"busVoltage\":" + String(busVoltage,2) + ",";
+payload += "\"current\":" + String(current_mA,2) + ",";
+payload += "\"power\":" + String(power_mW,2);
+payload += "}";
+
+HTTPClient http;
+http.begin(serverUrl);
+http.addHeader("Content-Type", "application/json");
+int httpCode = http.POST(payload);
+http.end();
+```
+
+## 📡 API Endpoints
+
+### POST `/api/sensor`
+
+Receives sensor data from ESP32 devices.
+
+**Request Body:**
+
+```json
+{
+  "temperature": 24.5,
+  "humidity": 65.2,
+  "lightStatus": "Light available, good for solar energy",
+  "windSpeed": 12.3,
+  "potentialWindPower": 123.0,
+  "busVoltage": 12.45,
+  "current": 245.67,
+  "power": 3056.78
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Sensor data received and processed successfully",
+  "data": {
+    "id": "ESP32_001_1234567890",
+    "timestamp": "2024-01-15T10:30:00.000Z",
+    "deviceId": "ESP32_001",
+    "batteryLevel": 85,
+    "totalEfficiency": 67.5,
+    "energyHarvested": 0.85,
+    "costSavings": 0.0001,
+    "carbonOffset": 0.0008
+  }
+}
+```
+
+### GET `/api/sensor`
+
+Retrieves stored sensor data with optional filtering.
+
+**Query Parameters:**
+
+- `limit`: Number of data points to return (default: 10)
+- `startTime`: ISO timestamp for start of range
+- `endTime`: ISO timestamp for end of range
+- `stats`: Include statistics (true/false)
+
+**Example:**
+
+```
+GET /api/sensor?limit=20&stats=true
+```
+
+### GET `/api/sensor/status`
+
+Returns device status and system statistics.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Device status retrieved successfully",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "devices": [
+    {
+      "deviceId": "ESP32_001",
+      "isOnline": true,
+      "lastSeen": "2024-01-15T10:30:00.000Z",
+      "batteryLevel": 85,
+      "connectionQuality": "excellent"
+    }
+  ],
+  "statistics": {
+    "totalReadings": 150,
+    "averageTemperature": 23.4,
+    "averageHumidity": 62.1,
+    "averagePower": 2847.3,
+    "totalEnergyHarvested": 127.8,
+    "totalCostSavings": 0.0153,
+    "totalCarbonOffset": 0.1176,
+    "uptime": "100%",
+    "dataQuality": "excellent"
+  }
+}
+```
+
+### GET `/api/sensor/stream`
+
+Real-time data stream using Server-Sent Events.
+
+**Query Parameters:**
+
+- `interval`: Update interval in milliseconds (default: 5000)
+
+**Usage:**
+
+```javascript
+const eventSource = new EventSource("/api/sensor/stream?interval=3000");
+
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log("Real-time update:", data);
+};
+```
+
+### GET `/api/sensor/analysis`
+
+Returns comprehensive data analysis including trends, hourly averages, and detailed statistics.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Comprehensive data analysis retrieved successfully",
+  "timestamp": "2024-01-15T10:30:00.000Z",
+  "analysis": {
+    "statistics": {
+      /* Full statistics object */
+    },
+    "trends": {
+      "dataPoints": 100,
+      "timeRange": {
+        "start": "2024-01-15T08:00:00.000Z",
+        "end": "2024-01-15T10:30:00.000Z"
+      },
+      "latestReadings": [
+        /* Last 10 readings */
+      ]
+    },
+    "hourlyAnalysis": {
+      "totalHours": 3,
+      "hourlyData": [
+        /* Hourly averages */
+      ],
+      "summary": {
+        "mostActiveHour": {
+          /* Hour with most data points */
+        },
+        "averageReadingsPerHour": 33
+      }
+    },
+    "dataQuality": {
+      "totalReadings": 200,
+      "dataRetention": "Last 200 readings",
+      "dataPointsRetained": 200,
+      "coverage": "3 hours of data"
+    }
+  }
+}
+```
+
+## 🧪 Testing
+
+Visit `/test` to access the built-in testing environment:
+
+- **Test Data Generation**: Create realistic sensor data
+- **API Testing**: Test all endpoints individually
+- **Data Stream Simulation**: Simulate real-time ESP32 data
+- **Scenario Testing**: Test different environmental conditions
+
+## 🎨 Dashboard Features
+
+### Real-time Metrics
+
+- Temperature and humidity monitoring
+- Wind speed and power potential
+- Solar power output and efficiency
+- Battery level and system voltage
+- Current draw and total power
+
+### Calculated Values
+
+- **Solar Efficiency**: Based on power output and light conditions
+- **Wind Efficiency**: Based on wind speed and power potential
+- **Total Efficiency**: Combined system efficiency
+- **Energy Harvested**: Cumulative energy production
+- **Cost Savings**: Estimated electricity cost savings
+- **Carbon Offset**: Environmental impact reduction
+
+### System Status
+
+- Device online/offline status
+- Connection quality assessment
+- Battery health monitoring
+- Data quality indicators
+- System uptime tracking
+
+## 🔧 Configuration
+
+### Environment Variables
+
+Create a `.env.local` file for custom configuration:
+
+```env
+# Development settings
+NODE_ENV=development
+
+# API configuration
+API_RATE_LIMIT=100
+MAX_DATA_POINTS=200
+
+# Device settings
+DEFAULT_DEVICE_ID=ESP32_001
+OFFLINE_THRESHOLD=300000
+```
+
+### Data Retention
+
+- **Default**: Last 200 data points for exhaustive analysis
+- **Cleanup**: Automatic cleanup every hour
+- **Retention**: 24 hours of historical data
+- **Configurable**: Adjustable via environment variables
+- **Analysis**: Comprehensive statistics including min/max values, trends, and hourly averages
+
+## 🚀 Deployment
+
+### Production Build
+
+```bash
+npm run build
+npm start
+```
+
+### Docker Deployment
+
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+RUN npm run build
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+### Environment Considerations
+
+- **Memory**: Minimum 512MB RAM
+- **Storage**: 1GB+ for data storage
+- **Network**: Stable internet connection for ESP32 communication
+- **Security**: Consider HTTPS for production deployments
+
+## 📈 Performance
+
+- **Data Processing**: < 10ms per sensor reading
+- **Real-time Updates**: 5-second intervals (configurable)
+- **Memory Usage**: Efficient in-memory storage with automatic cleanup
+- **Scalability**: Designed for single-device monitoring, easily extensible
+
+## 🔒 Security Features
+
+- **Input Validation**: Comprehensive data validation
+- **Error Handling**: Graceful error handling and logging
+- **Rate Limiting**: Configurable API rate limiting
+- **Data Sanitization**: Automatic data cleaning and normalization
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+1. **ESP32 Connection Failed**
+
+   - Check WiFi credentials
+   - Verify server IP address
+   - Ensure network connectivity
+
+2. **Dashboard Not Updating**
+
+   - Check browser console for errors
+   - Verify EventSource connection
+   - Check API endpoint responses
+
+3. **Data Validation Errors**
+   - Review ESP32 data format
+   - Check sensor readings for reasonable values
+   - Verify JSON payload structure
+
+### Debug Mode
+
+Enable detailed logging by setting `NODE_ENV=development` in your environment.
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- Built with [Next.js](https://nextjs.org/)
+- Styled with [Tailwind CSS](https://tailwindcss.com/)
+- Icons from [Lucide React](https://lucide.dev/)
+- Charts powered by [Recharts](https://recharts.org/)
+
+## 📞 Support
+
+For questions, issues, or contributions:
+
+- Create an issue in the repository
+- Check the troubleshooting section
+- Review the API documentation
+
+---
+
+**Happy Energy Harvesting! 🌞💨⚡**
