@@ -554,7 +554,8 @@ export default function RealTimeDashboard() {
           {!aiPrediction && !predictionLoading && (
             <div className="text-center py-8 text-gray-500">
               <p>
-                🤖 Click &quot;Update Predictions&quot; to get AI-powered solar forecasts
+                🤖 Click &quot;Update Predictions&quot; to get AI-powered solar
+                forecasts
               </p>
             </div>
           )}

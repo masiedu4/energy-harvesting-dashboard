@@ -290,7 +290,12 @@ export class MockAIService {
       humidity =
         50 + Math.sin(((hour - 6) * Math.PI) / 12) * 20 + Math.random() * 10;
       lightStatus = hour < 10 ? "bright" : hour < 14 ? "good" : "moderate";
-      lightValue = hour < 10 ? 3000 + Math.random() * 1000 : hour < 14 ? 2000 + Math.random() * 1000 : 1000 + Math.random() * 1000;
+      lightValue =
+        hour < 10
+          ? 3000 + Math.random() * 1000
+          : hour < 14
+          ? 2000 + Math.random() * 1000
+          : 1000 + Math.random() * 1000;
       windSpeed = 3 + Math.random() * 8;
     } else {
       // Nighttime
@@ -345,7 +350,10 @@ export class MockAIService {
    * Calculate efficiency vs prediction
    */
   calculateEfficiencyVsPrediction(
-actualEfficiency: number, predictedPower: number, power: number  ): number {
+    actualEfficiency: number,
+    predictedPower: number,
+    power: number
+  ): number {
     if (predictedPower === 0) return 0;
 
     const predictedEfficiency = (predictedPower / 1000) * 100;
