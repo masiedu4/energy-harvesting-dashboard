@@ -143,7 +143,7 @@ export class MockAIService {
     // Apply environmental factors
     const tempEffect = this.calculateTemperatureEffect(sensorData.temperature);
     const humidityEffect = this.calculateHumidityEffect(sensorData.humidity);
-    const windEffect = this.calculateWindEffect(sensorData.windSpeed);
+    const windEffect = this.calculateWindEffect(sensorData.windCount);
 
     // Apply historical pattern adjustments
     const historicalAdjustment = this.calculateHistoricalAdjustment(hour);
@@ -282,6 +282,7 @@ export class MockAIService {
     let humidity = 60;
     let lightStatus = "night";
     let windSpeed = 5;
+    let lightValue = 0;
 
     if (hour >= 6 && hour < 18) {
       // Daytime
@@ -289,11 +290,13 @@ export class MockAIService {
       humidity =
         50 + Math.sin(((hour - 6) * Math.PI) / 12) * 20 + Math.random() * 10;
       lightStatus = hour < 10 ? "bright" : hour < 14 ? "good" : "moderate";
+      lightValue = hour < 10 ? 3000 + Math.random() * 1000 : hour < 14 ? 2000 + Math.random() * 1000 : 1000 + Math.random() * 1000;
       windSpeed = 3 + Math.random() * 8;
     } else {
       // Nighttime
       temperature = 15 + Math.random() * 5;
       humidity = 70 + Math.random() * 20;
+      lightValue = Math.random() * 100; // Very low light at night
       windSpeed = 2 + Math.random() * 6;
     }
 
@@ -303,12 +306,13 @@ export class MockAIService {
       deviceId: "ESP32_001",
       temperature: Math.round(temperature * 10) / 10,
       humidity: Math.round(humidity * 10) / 10,
-      lightStatus,
-      windSpeed: Math.round(windSpeed * 10) / 10,
-      potentialWindPower: Math.round(Math.pow(windSpeed, 3) * 0.5 * 10) / 10,
       busVoltage: 5.0,
       current: 0,
       power: 0,
+      lightValue: Math.round(lightValue * 10) / 10,
+      lightStatus,
+      windCount: Math.round(windSpeed * 10) / 10,
+      hour: hour,
       batteryLevel: 85,
       solarEfficiency: 0,
       windEfficiency: 0,

@@ -13,12 +13,13 @@ export interface SensorData {
 export interface ESP32SensorData {
   temperature: number;
   humidity: number;
-  lightStatus: string;
-  windSpeed: number;
-  potentialWindPower: number;
-  busVoltage: number;
+  bus_voltage: number;
   current: number;
   power: number;
+  light_value: number;
+  light_status: string;
+  wind_count: number;
+  hr: number;
 }
 
 export interface ProcessedSensorData {
@@ -27,12 +28,17 @@ export interface ProcessedSensorData {
   deviceId: string;
   temperature: number;
   humidity: number;
-  lightStatus: string;
-  windSpeed: number;
-  potentialWindPower: number;
   busVoltage: number;
   current: number;
   power: number;
+  lightValue: number;
+  lightStatus: string;
+  windCount: number;
+  hour: number;
+  // Legacy fields for backward compatibility
+  irradiance?: number;
+  ldrRaw?: number;
+  avgWind?: number;
   batteryLevel: number;
   solarEfficiency: number;
   windEfficiency: number;

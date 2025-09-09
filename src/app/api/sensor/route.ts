@@ -18,14 +18,8 @@ export async function POST(request: NextRequest) {
     // Process the sensor data
     const processedData = await sensorService.processSensorData(body);
 
-    console.log("✅ Received and processed sensor data:", {
-      timestamp: processedData.timestamp,
-      temperature: processedData.temperature,
-      humidity: processedData.humidity,
-      power: processedData.power,
-      batteryLevel: processedData.batteryLevel,
-      totalEfficiency: processedData.totalEfficiency,
-    });
+    // Minimal logging - only log when data is received
+    console.log(`✅ ESP32 data received at ${new Date().toLocaleTimeString()}`);
 
     return NextResponse.json({
       message: "Sensor data processed successfully",
@@ -116,12 +110,13 @@ function validateESP32Data(data: unknown): {
   const requiredFields: (keyof ESP32SensorData)[] = [
     "temperature",
     "humidity",
-    "lightStatus",
-    "windSpeed",
-    "potentialWindPower",
-    "busVoltage",
+    "bus_voltage",
     "current",
     "power",
+    "light_value",
+    "light_status",
+    "wind_count",
+    "hr",
   ];
 
   // Check required fields
@@ -146,27 +141,31 @@ function validateESP32Data(data: unknown): {
     errors.push("Humidity must be a valid number");
   }
 
-  if (typeof sensorData.lightStatus !== "string") {
+  if (
+    typeof sensorData.light_value !== "number" ||
+    isNaN(sensorData.light_value as number)
+  ) {
+    errors.push("Light value must be a valid number");
+  }
+
+  if (typeof sensorData.light_status !== "string") {
     errors.push("Light status must be a string");
   }
 
   if (
-    typeof sensorData.windSpeed !== "number" ||
-    isNaN(sensorData.windSpeed as number)
+    typeof sensorData.wind_count !== "number" ||
+    isNaN(sensorData.wind_count as number)
   ) {
-    errors.push("Wind speed must be a valid number");
+    errors.push("Wind count must be a valid number");
+  }
+
+  if (typeof sensorData.hr !== "number" || isNaN(sensorData.hr as number)) {
+    errors.push("Hour must be a valid number");
   }
 
   if (
-    typeof sensorData.potentialWindPower !== "number" ||
-    isNaN(sensorData.potentialWindPower as number)
-  ) {
-    errors.push("Potential wind power must be a valid number");
-  }
-
-  if (
-    typeof sensorData.busVoltage !== "number" ||
-    isNaN(sensorData.busVoltage as number)
+    typeof sensorData.bus_voltage !== "number" ||
+    isNaN(sensorData.bus_voltage as number)
   ) {
     errors.push("Bus voltage must be a valid number");
   }
@@ -188,8 +187,10 @@ function validateESP32Data(data: unknown): {
   // Validate reasonable ranges
   const temp = sensorData.temperature as number;
   const humidity = sensorData.humidity as number;
-  const busVoltage = sensorData.busVoltage as number;
-  const windSpeed = sensorData.windSpeed as number;
+  const lightValue = sensorData.light_value as number;
+  const windCount = sensorData.wind_count as number;
+  const busVoltage = sensorData.bus_voltage as number;
+  const hour = sensorData.hr as number;
 
   if (temp < -50 || temp > 100) {
     errors.push("Temperature out of reasonable range (-50°C to 100°C)");
@@ -199,12 +200,20 @@ function validateESP32Data(data: unknown): {
     errors.push("Humidity out of reasonable range (0% to 100%)");
   }
 
+  if (lightValue < 0 || lightValue > 4095) {
+    errors.push("Light value out of reasonable range (0 to 4095)");
+  }
+
+  if (windCount < 0 || windCount > 10000) {
+    errors.push("Wind count out of reasonable range (0 to 10000)");
+  }
+
   if (busVoltage < 0 || busVoltage > 20) {
     errors.push("Bus voltage out of reasonable range (0V to 20V)");
   }
 
-  if (windSpeed < 0 || windSpeed > 200) {
-    errors.push("Wind speed out of reasonable range (0 to 200 km/h)");
+  if (hour < 0 || hour > 23) {
+    errors.push("Hour out of reasonable range (0 to 23)");
   }
 
   return {

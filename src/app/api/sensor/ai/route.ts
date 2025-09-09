@@ -90,12 +90,17 @@ export async function POST(request: NextRequest) {
       deviceId: "ESP32_001",
       temperature,
       humidity,
-      lightStatus,
-      windSpeed: 5, // Default wind speed
-      potentialWindPower: 62.5,
       busVoltage: 5.0,
       current: 0,
       power: 0,
+      lightValue: 0,
+      lightStatus,
+      windCount: 5, // Default wind count
+      hour: 12, // Default hour
+      // Legacy fields for backward compatibility
+      irradiance: 0,
+      ldrRaw: 0,
+      avgWind: 5,
       batteryLevel: 85,
       solarEfficiency: 0,
       windEfficiency: 0,

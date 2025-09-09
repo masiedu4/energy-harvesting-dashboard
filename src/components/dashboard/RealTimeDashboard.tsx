@@ -14,13 +14,8 @@ import {
   Legend,
   Filler,
 } from "chart.js";
-import { Line, Bar, Doughnut } from "react-chartjs-2";
-import {
-  ProcessedSensorData,
-  StreamData,
-  AIPrediction,
-  AIDayForecast,
-} from "@/types/sensor";
+import { Line, Doughnut } from "react-chartjs-2";
+import { ProcessedSensorData, StreamData, AIPrediction } from "@/types/sensor";
 
 // Register Chart.js components
 ChartJS.register(
@@ -38,67 +33,66 @@ ChartJS.register(
 
 export default function RealTimeDashboard() {
   // State for real-time data
-  const [streamData, setStreamData] = useState<StreamData | null>(null);
+  const [streamData] = useState<StreamData | null>(null);
   const [fallbackData, setFallbackData] = useState<
     ProcessedSensorData[] | null
   >(null);
 
-  const [connectionStatus, setConnectionStatus] =
-    useState<string>("connecting");
-  const [error, setError] = useState<string | null>(null);
-
+  const [connectionStatus] = useState<string>("connecting");
   const [lastUpdate, setLastUpdate] = useState<string>("");
-  const [apiResponse, setApiResponse] = useState<{
-    status?: number;
-    ok?: boolean;
-    headers?: Record<string, string>;
-    error?: string;
-  } | null>(null);
 
   // AI Prediction state
   const [aiPrediction, setAiPrediction] = useState<AIPrediction | null>(null);
-  const [dayForecast, setDayForecast] = useState<AIDayForecast | null>(null);
   const [predictionLoading, setPredictionLoading] = useState(false);
 
-  const displayData = streamData || fallbackData;
-
-  // Debug logging
-  console.log("🔍 Dashboard Debug Info:");
-  console.log("  streamData:", streamData);
-  console.log("  fallbackData:", fallbackData);
-  console.log("  displayData:", displayData);
-
   // Helper function to get current data
-  const getCurrentData = useCallback((): ProcessedSensorData[] | null => {
-    if (
-      streamData &&
-      "sensorData" in streamData &&
-      Array.isArray(streamData.sensorData)
-    ) {
+  const getCurrentData = useCallback((): ProcessedSensorData | null => {
+    if (streamData && "sensorData" in streamData && streamData.sensorData) {
       return streamData.sensorData;
     }
 
-    if (fallbackData) {
-      return fallbackData;
+    if (fallbackData && fallbackData.length > 0) {
+      return fallbackData[fallbackData.length - 1];
     }
 
     return null;
   }, [streamData, fallbackData]);
 
+  // Get all data for charts
+  const getAllData = useCallback((): ProcessedSensorData[] => {
+    if (streamData && "sensorData" in streamData && streamData.sensorData) {
+      return [streamData.sensorData];
+    }
+
+    if (fallbackData && fallbackData.length > 0) {
+      return fallbackData;
+    }
+
+    return [];
+  }, [streamData, fallbackData]);
+
+  // Stream connection disabled - API is now passive
+
+  // Fetch fallback data
+  const fetchFallbackData = useCallback(async () => {
+    try {
+      const response = await fetch("/api/sensor?limit=50");
+      if (response.ok) {
+        const data = await response.json();
+        setFallbackData(data.data || []);
+        setLastUpdate(new Date().toLocaleTimeString());
+      }
+    } catch (error) {
+      console.error("Error fetching fallback data:", error);
+    }
+  }, []);
+
   // Fetch AI predictions
   const fetchAIPredictions = useCallback(async () => {
     const currentData = getCurrentData();
-    if (!currentData) {
-      return;
-    }
+    if (!currentData) return;
 
     setPredictionLoading(true);
-
-    // Add a timeout to prevent loading state from getting stuck
-    const loadingTimeout = setTimeout(() => {
-      setPredictionLoading(false);
-    }, 10000); // 10 second timeout
-
     try {
       // Get current hour prediction
       const currentResponse = await fetch("/api/sensor/ai?type=current");
@@ -108,244 +102,234 @@ export default function RealTimeDashboard() {
       }
 
       // Get day forecast
-      const dayResponse = await fetch("/api/sensor/ai?type=day");
-      if (dayResponse.ok) {
-        const dayPred = await dayResponse.json();
-        setDayForecast(dayPred);
-      }
-    } catch (error: unknown) {
-      console.error("Failed to fetch AI predictions:", error);
+      // Day forecast removed - using current predictions only
+    } catch (error) {
+      console.error("Error fetching AI predictions:", error);
     } finally {
-      clearTimeout(loadingTimeout);
       setPredictionLoading(false);
     }
   }, [getCurrentData]);
 
-  // AI Prediction Chart Data
-  const getAIPredictionChartData = () => {
-    if (!dayForecast?.forecast) return null;
-
-    const labels = dayForecast.forecast.map((h: AIPrediction) => `${h.hr}:00`);
-    const predictedPower = dayForecast.forecast.map(
-      (h: AIPrediction) => h.predicted_power
-    );
-    const actualPower = dayForecast.forecast.map((h: AIPrediction) => {
-      const currentData = getCurrentData();
-      if (!currentData) return 0;
-
-      const actual = currentData.find(
-        (s: ProcessedSensorData) => new Date(s.timestamp).getHours() === h.hr
-      );
-      return actual?.power || 0;
-    });
-
-    return {
-      labels,
-      datasets: [
-        {
-          label: "Predicted Power (mW)",
-          data: predictedPower,
-          borderColor: "rgb(255, 99, 132)",
-          backgroundColor: "rgba(255, 99, 132, 0.1)",
-          tension: 0.1,
-        },
-        {
-          label: "Actual Power (mW)",
-          data: actualPower,
-          borderColor: "rgb(54, 162, 235)",
-          backgroundColor: "rgba(54, 162, 235, 0.1)",
-          tension: 0.1,
-        },
-      ],
-    };
-  };
-
-  const connectToStream = useCallback(() => {
-    try {
-      const eventSource = new EventSource("/api/sensor/stream");
-      setConnectionStatus("connecting");
-
-      eventSource.onopen = () => {
-        setConnectionStatus("connected");
-      };
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data: StreamData = JSON.parse(event.data);
-
-          if (data.sensorData && typeof data.sensorData === "object") {
-            setStreamData(data);
-            setLastUpdate(new Date().toLocaleTimeString());
-            setError(null);
-          }
-        } catch (parseError) {
-          console.error("Error parsing stream data:", parseError);
-          setError("Error parsing sensor data");
-        }
-      };
-
-      eventSource.onerror = (event) => {
-        console.error("EventSource error:", event);
-        setConnectionStatus("error");
-        setError("Stream connection error");
-      };
-
-      return eventSource;
-    } catch (error) {
-      console.error("Error connecting to stream:", error);
-      setConnectionStatus("error");
-      setError("Failed to connect to stream");
-      return null;
-    }
-  }, []);
-
-  const fetchFallbackData = useCallback(async () => {
-    try {
-      console.log("🔄 Fetching fallback data...");
-      const response = await fetch("/api/sensor?limit=50");
-      console.log("📡 Response status:", response.status);
-      if (response.ok) {
-        const data = await response.json();
-        console.log("📊 Received data:", data);
-        console.log("📊 data.data:", data.data);
-        console.log("📊 data.data length:", data.data?.length);
-        setFallbackData(data.data || []);
-        setLastUpdate(new Date().toLocaleTimeString());
-        setError(null);
-        console.log("✅ Fallback data set successfully");
-      } else {
-        console.error("❌ Failed to fetch fallback data:", response.status);
-        setError("Failed to fetch fallback data");
-      }
-    } catch (error) {
-      console.error("❌ Error fetching fallback data:", error);
-      setError("Error fetching fallback data");
-    }
-  }, []);
-
-  const testStream = useCallback(async () => {
-    try {
-      const response = await fetch("/api/sensor/stream");
-      const result = {
-        status: response.status,
-        ok: response.ok,
-        headers: Object.fromEntries(response.headers.entries()),
-      };
-      setApiResponse(result);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      setApiResponse({ error: errorMessage });
-    }
-  }, []);
-
+  // Initialize dashboard - only fetch data once, no streaming
   useEffect(() => {
-    console.log("🚀 useEffect triggered - initializing dashboard");
-    const eventSource = connectToStream();
-    console.log("🔄 Calling fetchFallbackData...");
     fetchFallbackData();
+    // fetchAIPredictions(); // Disabled auto AI fetch
+    // const eventSource = connectToStream(); // Disabled auto stream connection
 
-    return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-    };
-  }, [connectToStream, fetchFallbackData]);
+    // return () => {
+    //   if (eventSource) {
+    //     eventSource.close();
+    //   }
+    // };
+  }, [fetchFallbackData]);
 
-  // Connection health check
-  useEffect(() => {
-    const healthCheck = setInterval(() => {
-      if (lastUpdate) {
-        const lastUpdateTime = new Date(lastUpdate).getTime();
-        const now = Date.now();
-        if (now - lastUpdateTime > 30000) {
-          setConnectionStatus("error");
-        }
-      }
-    }, 10000);
+  // Connection health check (disabled to prevent continuous running)
+  // useEffect(() => {
+  //   const healthCheck = setInterval(() => {
+  //     if (lastUpdate) {
+  //       const lastUpdateTime = new Date(lastUpdate).getTime();
+  //       const now = Date.now();
+  //       if (now - lastUpdateTime > 30000) {
+  //         setConnectionStatus("error");
+  //       }
+  //     }
+  //   }, 10000);
 
-    return () => clearInterval(healthCheck);
-  }, [lastUpdate]);
+  //   return () => clearInterval(healthCheck);
+  // }, [lastUpdate]);
 
-  // Prepare chart data
-  const getChartData = () => {
-    if (!displayData) return null;
+  const currentData = getCurrentData();
+  const allData = getAllData();
 
-    if (Array.isArray(displayData)) {
-      if (displayData.length === 0) return null;
-      const data = displayData;
-      const labels = data.map((_, index) => `Reading ${index + 1}`);
-
-      return {
-        temperature: data.map((d) => d?.temperature || 0),
-        humidity: data.map((d) => d?.humidity || 0),
-        power: data.map((d) => d?.power || 0),
-        windSpeed: data.map((d) => d?.windSpeed || 0),
-        solarEfficiency: data.map((d) => d?.solarEfficiency || 0),
-        windEfficiency: data.map((d) => d?.windEfficiency || 0),
-        totalEfficiency: data.map((d) => d?.totalEfficiency || 0),
-        labels,
-      };
-    } else {
-      // Single StreamData object
-      if (!displayData.sensorData) return null;
-      const data = [displayData.sensorData];
-      const labels = ["Current"];
-
-      return {
-        temperature: data.map((d) => d?.temperature || 0),
-        humidity: data.map((d) => d?.humidity || 0),
-        power: data.map((d) => d?.power || 0),
-        windSpeed: data.map((d) => d?.windSpeed || 0),
-        solarEfficiency: data.map((d) => d?.solarEfficiency || 0),
-        windEfficiency: data.map((d) => d?.windEfficiency || 0),
-        totalEfficiency: data.map((d) => d?.totalEfficiency || 0),
-        labels,
-      };
-    }
-  };
-
-  const chartData = getChartData();
-
-  // Safety check for chart data
-  if (!chartData) {
-    console.log("No chart data available");
+  // Show loading state if no data
+  if (!currentData || allData.length === 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center py-20">
+            <div className="animate-pulse mb-8">
+              <div className="w-32 h-32 bg-gradient-to-r from-blue-400 to-purple-500 rounded-full mx-auto mb-6 flex items-center justify-center">
+                <span className="text-4xl">⚡</span>
+              </div>
+            </div>
+            <h1 className="text-5xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-4">
+              Energy Harvesting Dashboard
+            </h1>
+            <p className="text-xl text-gray-600 mb-4">
+              🌞 Ready to receive real-time ESP32 data
+            </p>
+            <p className="text-sm text-gray-500 mb-8">
+              System cleared and optimized for live sensor data
+            </p>
+            <div className="flex flex-col items-center space-y-4">
+              <div className="bg-green-100 border border-green-300 rounded-lg px-6 py-3 mb-4">
+                <p className="text-green-800 font-medium">
+                  ✅ System Ready - Send data to:{" "}
+                  <code className="bg-green-200 px-2 py-1 rounded">
+                    POST /api/sensor
+                  </code>
+                </p>
+              </div>
+              <div className="flex space-x-4">
+                <button
+                  onClick={fetchFallbackData}
+                  className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white px-8 py-3 rounded-full font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                >
+                  🔄 Check for Data
+                </button>
+                <button
+                  onClick={() => {
+                    fetchFallbackData();
+                    fetchAIPredictions();
+                  }}
+                  className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-8 py-3 rounded-full font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105"
+                >
+                  🔄 Refresh Dashboard
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  // Chart options
-  const lineChartOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: "top" as const,
+  // Prepare chart data for multiple readings
+  const chartLabels = allData.map((_, index) =>
+    allData.length === 1 ? "Current" : `Reading ${index + 1}`
+  );
+
+  // Environmental Data Chart
+  const environmentalData = {
+    labels: chartLabels,
+    datasets: [
+      {
+        label: "Temperature (°C)",
+        data: allData.map((d) => d.temperature),
+        borderColor: "rgb(239, 68, 68)",
+        backgroundColor: "rgba(239, 68, 68, 0.1)",
+        yAxisID: "y",
+        tension: 0.4,
       },
-      title: {
-        display: true,
-        text: "Sensor Readings Over Time",
+      {
+        label: "Humidity (%)",
+        data: allData.map((d) => d.humidity),
+        borderColor: "rgb(59, 130, 246)",
+        backgroundColor: "rgba(59, 130, 246, 0.1)",
+        yAxisID: "y1",
+        tension: 0.4,
       },
-    },
-    scales: {
-      y: {
-        beginAtZero: true,
-      },
-    },
+    ],
   };
 
-  const barChartOptions = {
+  // Solar Data Chart
+  const solarData = {
+    labels: chartLabels,
+    datasets: [
+      {
+        label: "Irradiance (W/m²)",
+        data: allData.map((d) => d.irradiance || 0),
+        borderColor: "rgb(251, 191, 36)",
+        backgroundColor: "rgba(251, 191, 36, 0.1)",
+        yAxisID: "y",
+        tension: 0.4,
+      },
+      {
+        label: "LDR Raw",
+        data: allData.map((d) => d.ldrRaw || 0),
+        borderColor: "rgb(245, 158, 11)",
+        backgroundColor: "rgba(245, 158, 11, 0.1)",
+        yAxisID: "y1",
+        tension: 0.4,
+      },
+    ],
+  };
+
+  // Power Data Chart
+  const powerData = {
+    labels: chartLabels,
+    datasets: [
+      {
+        label: "Power (mW)",
+        data: allData.map((d) => d.power),
+        borderColor: "rgb(16, 185, 129)",
+        backgroundColor: "rgba(16, 185, 129, 0.2)",
+        fill: true,
+        tension: 0.4,
+      },
+      {
+        label: "Current (mA)",
+        data: allData.map((d) => d.current),
+        borderColor: "rgb(139, 92, 246)",
+        backgroundColor: "rgba(139, 92, 246, 0.1)",
+        yAxisID: "y1",
+        tension: 0.4,
+      },
+    ],
+  };
+
+  // Efficiency Doughnut Chart
+  const efficiencyData = {
+    labels: ["Solar Efficiency", "Wind Efficiency", "Unused Potential"],
+    datasets: [
+      {
+        data: [
+          currentData.solarEfficiency,
+          currentData.windEfficiency,
+          Math.max(
+            0,
+            100 - currentData.solarEfficiency - currentData.windEfficiency
+          ),
+        ],
+        backgroundColor: [
+          "rgba(251, 191, 36, 0.8)",
+          "rgba(34, 197, 94, 0.8)",
+          "rgba(156, 163, 175, 0.3)",
+        ],
+        borderColor: [
+          "rgb(251, 191, 36)",
+          "rgb(34, 197, 94)",
+          "rgb(156, 163, 175)",
+        ],
+        borderWidth: 2,
+      },
+    ],
+  };
+
+  // Chart options
+  const dualAxisOptions = {
     responsive: true,
+    interaction: {
+      mode: "index" as const,
+      intersect: false,
+    },
     plugins: {
       legend: {
         position: "top" as const,
       },
-      title: {
-        display: true,
-        text: "Efficiency Metrics",
-      },
     },
     scales: {
+      x: {
+        display: true,
+        grid: {
+          color: "rgba(0, 0, 0, 0.1)",
+        },
+      },
       y: {
-        beginAtZero: true,
-        max: 100,
+        type: "linear" as const,
+        display: true,
+        position: "left" as const,
+        grid: {
+          color: "rgba(0, 0, 0, 0.1)",
+        },
+      },
+      y1: {
+        type: "linear" as const,
+        display: true,
+        position: "right" as const,
+        grid: {
+          drawOnChartArea: false,
+        },
       },
     },
   };
@@ -356,145 +340,46 @@ export default function RealTimeDashboard() {
       legend: {
         position: "bottom" as const,
       },
-      title: {
-        display: true,
-        text: "Current Status",
-      },
     },
   };
 
-  // Debug: Check what we have
-  console.log("🔍 Display Data Check:");
-  console.log("  displayData:", displayData);
-  console.log("  Array.isArray(displayData):", Array.isArray(displayData));
-  console.log(
-    "  displayData.length:",
-    Array.isArray(displayData) ? displayData.length : "N/A"
-  );
-  console.log("  fallbackData:", fallbackData);
-  console.log("  streamData:", streamData);
-
-  if (
-    !displayData ||
-    (Array.isArray(displayData) && displayData.length === 0) ||
-    (!Array.isArray(displayData) && !displayData.sensorData)
-  ) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center py-20">
-            <h1 className="text-4xl font-bold text-gray-800 mb-4">
-              🌞 Energy Harvesting Dashboard
-            </h1>
-            <p className="text-xl text-gray-600 mb-8">
-              Waiting for sensor data...
-            </p>
-            <div className="flex justify-center space-x-4">
-              <button
-                onClick={fetchFallbackData}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-              >
-                Refresh Data
-              </button>
-              <button
-                onClick={connectToStream}
-                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-              >
-                Connect to Stream
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const currentData = Array.isArray(displayData)
-    ? displayData[displayData.length - 1]
-    : displayData.sensorData;
-
-  const deviceStatus = Array.isArray(displayData)
-    ? null
-    : displayData.deviceStatus;
-
-  const statistics = Array.isArray(displayData) ? null : displayData.statistics;
-
-  // Debug logging
-  console.log("displayData:", displayData);
-  console.log("currentData:", currentData);
-  console.log("Array.isArray(displayData):", Array.isArray(displayData));
-  console.log("currentData type:", typeof currentData);
-  console.log(
-    "currentData keys:",
-    currentData ? Object.keys(currentData) : "undefined"
-  );
-
-  // Safety check - if currentData is undefined, show loading state
-  if (!currentData) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center py-20">
-            <h1 className="text-4xl font-bold text-gray-800 mb-4">
-              🌞 Energy Harvesting Dashboard
-            </h1>
-            <p className="text-xl text-gray-600 mb-8">Loading sensor data...</p>
-            <div className="flex justify-center space-x-4">
-              <button
-                onClick={fetchFallbackData}
-                className="bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-              >
-                Refresh Data
-              </button>
-              <button
-                onClick={connectToStream}
-                className="bg-green-500 hover:bg-green-600 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
-              >
-                Connect to Stream
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-green-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       {/* Header */}
-      <div className="bg-white shadow-lg border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+      <div className="bg-white/80 backdrop-blur-md shadow-xl border-b border-white/20">
+        <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-800">
-                🌞 Energy Harvesting Dashboard
+              <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                ⚡ Energy Harvesting Dashboard
               </h1>
-              <p className="text-gray-600">
-                Real-time monitoring of solar and wind energy systems
+              <p className="text-gray-600 mt-2">
+                Real-time ESP32 sensor monitoring with AI predictions
               </p>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-6">
+              <div className="text-right">
+                <p className="text-sm text-gray-500">Last Update</p>
+                <p className="font-semibold text-gray-800">{lastUpdate}</p>
+              </div>
               <div
-                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                className={`px-4 py-2 rounded-full text-sm font-semibold ${
                   connectionStatus === "connected"
                     ? "bg-green-100 text-green-800"
                     : connectionStatus === "connecting"
                     ? "bg-yellow-100 text-yellow-800"
-                    : connectionStatus === "error"
-                    ? "bg-red-100 text-red-800"
-                    : "bg-gray-100 text-gray-800"
+                    : connectionStatus === "disabled"
+                    ? "bg-blue-100 text-blue-800"
+                    : "bg-red-100 text-red-800"
                 }`}
               >
                 {connectionStatus === "connected"
                   ? "🟢 Online"
                   : connectionStatus === "connecting"
                   ? "🟡 Connecting"
-                  : connectionStatus === "error"
-                  ? "🔴 Error"
-                  : "⚫ Offline"}
-              </div>
-              <div className="text-sm text-gray-500">
-                Last update: {lastUpdate || "Never"}
+                  : connectionStatus === "disabled"
+                  ? "🔇 Passive Mode"
+                  : "🔴 Offline"}
               </div>
             </div>
           </div>
@@ -504,58 +389,64 @@ export default function RealTimeDashboard() {
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Current Status Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-blue-500">
-            <div className="flex items-center">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <span className="text-2xl">🌡️</span>
-              </div>
-              <div className="ml-4">
+          {/* Temperature Card */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20 hover:shadow-2xl transition-all duration-300">
+            <div className="flex items-center justify-between">
+              <div>
                 <p className="text-sm font-medium text-gray-600">Temperature</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {currentData.temperature?.toFixed(1) || "N/A"}°C
+                <p className="text-3xl font-bold text-red-600">
+                  {currentData.temperature?.toFixed(1) || "0.0"}°C
                 </p>
+              </div>
+              <div className="w-12 h-12 bg-gradient-to-br from-red-400 to-red-600 rounded-xl flex items-center justify-center">
+                <span className="text-white text-xl">🌡️</span>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-green-500">
-            <div className="flex items-center">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <span className="text-2xl">💧</span>
-              </div>
-              <div className="ml-4">
+          {/* Humidity Card */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20 hover:shadow-2xl transition-all duration-300">
+            <div className="flex items-center justify-between">
+              <div>
                 <p className="text-sm font-medium text-gray-600">Humidity</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {currentData.humidity?.toFixed(1) || "N/A"}%
+                <p className="text-3xl font-bold text-blue-600">
+                  {currentData.humidity?.toFixed(1) || "0.0"}%
                 </p>
+              </div>
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center">
+                <span className="text-white text-xl">💧</span>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-yellow-500">
-            <div className="flex items-center">
-              <div className="p-3 bg-yellow-100 rounded-lg">
-                <span className="text-2xl">⚡</span>
+          {/* Irradiance Card */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20 hover:shadow-2xl transition-all duration-300">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-gray-600">Irradiance</p>
+                <p className="text-3xl font-bold text-yellow-600">
+                  {currentData.irradiance?.toFixed(0) || "0"}
+                </p>
+                <p className="text-xs text-gray-500">W/m²</p>
               </div>
-              <div className="ml-4">
+              <div className="w-12 h-12 bg-gradient-to-br from-yellow-400 to-yellow-600 rounded-xl flex items-center justify-center">
+                <span className="text-white text-xl">☀️</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Power Card */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20 hover:shadow-2xl transition-all duration-300">
+            <div className="flex items-center justify-between">
+              <div>
                 <p className="text-sm font-medium text-gray-600">Power</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {currentData.power?.toFixed(1) || "N/A"} mW
+                <p className="text-3xl font-bold text-green-600">
+                  {currentData.power?.toFixed(2) || "0.00"}
                 </p>
+                <p className="text-xs text-gray-500">mW</p>
               </div>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-purple-500">
-            <div className="flex items-center">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <span className="text-2xl">💨</span>
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600">Wind Speed</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {currentData.windSpeed?.toFixed(1) || "N/A"} km/h
-                </p>
+              <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-green-600 rounded-xl flex items-center justify-center">
+                <span className="text-white text-xl">⚡</span>
               </div>
             </div>
           </div>
@@ -563,467 +454,197 @@ export default function RealTimeDashboard() {
 
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Temperature & Humidity Chart */}
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Temperature & Humidity Trends
+          {/* Environmental Data Chart */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <span className="mr-2">🌡️</span>
+              Environmental Conditions
             </h3>
-            {chartData ? (
-              <Line
-                data={{
-                  labels: chartData.labels,
-                  datasets: [
-                    {
-                      label: "Temperature (°C)",
-                      data: chartData.temperature,
-                      borderColor: "rgb(59, 130, 246)",
-                      backgroundColor: "rgba(59, 130, 246, 0.1)",
-                      tension: 0.4,
-                      fill: true,
-                    },
-                    {
-                      label: "Humidity (%)",
-                      data: chartData.humidity,
-                      borderColor: "rgb(34, 197, 94)",
-                      backgroundColor: "rgba(34, 197, 94, 0.1)",
-                      tension: 0.4,
-                      fill: true,
-                    },
-                  ],
-                }}
-                options={lineChartOptions}
-              />
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                No chart data available
-              </div>
-            )}
+            <Line data={environmentalData} options={dualAxisOptions} />
           </div>
 
-          {/* Power & Wind Chart */}
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Power & Wind Speed
+          {/* Solar Data Chart */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <span className="mr-2">☀️</span>
+              Solar Conditions
             </h3>
-            {chartData ? (
-              <Line
-                data={{
-                  labels: chartData.labels,
-                  datasets: [
-                    {
-                      label: "Power (mW)",
-                      data: chartData.power,
-                      borderColor: "rgb(245, 158, 11)",
-                      backgroundColor: "rgba(245, 158, 11, 0.1)",
-                      tension: 0.4,
-                      fill: true,
-                    },
-                    {
-                      label: "Wind Speed (km/h)",
-                      data: chartData.windSpeed,
-                      borderColor: "rgb(168, 85, 247)",
-                      backgroundColor: "rgba(168, 85, 247, 0.1)",
-                      tension: 0.4,
-                      fill: true,
-                    },
-                  ],
-                }}
-                options={lineChartOptions}
-              />
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                No chart data available
-              </div>
-            )}
+            <Line data={solarData} options={dualAxisOptions} />
           </div>
-        </div>
 
-        {/* Efficiency Metrics */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Efficiency Bar Chart */}
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
+          {/* Power Data Chart */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <span className="mr-2">⚡</span>
+              Power Generation
+            </h3>
+            <Line data={powerData} options={dualAxisOptions} />
+          </div>
+
+          {/* Efficiency Chart */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <span className="mr-2">📊</span>
               System Efficiency
             </h3>
-            {chartData ? (
-              <Bar
-                data={{
-                  labels: chartData.labels,
-                  datasets: [
-                    {
-                      label: "Solar Efficiency (%)",
-                      data: chartData.solarEfficiency,
-                      backgroundColor: "rgba(59, 130, 246, 0.8)",
-                      borderColor: "rgb(59, 130, 246)",
-                      borderWidth: 1,
-                    },
-                    {
-                      label: "Wind Efficiency (%)",
-                      data: chartData.windEfficiency,
-                      backgroundColor: "rgba(34, 197, 94, 0.8)",
-                      borderColor: "rgb(34, 197, 94)",
-                      borderWidth: 1,
-                    },
-                    {
-                      label: "Total Efficiency (%)",
-                      data: chartData.totalEfficiency,
-                      backgroundColor: "rgba(245, 158, 11, 0.8)",
-                      borderColor: "rgb(245, 158, 11)",
-                      borderWidth: 1,
-                    },
-                  ],
-                }}
-                options={barChartOptions}
-              />
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                No chart data available
-              </div>
-            )}
-          </div>
-
-          {/* Current Status Doughnut */}
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Current System Status
-            </h3>
-            {currentData ? (
-              <Doughnut
-                data={{
-                  labels: ["Solar", "Wind", "Battery"],
-                  datasets: [
-                    {
-                      data: [
-                        currentData.solarEfficiency || 0,
-                        currentData.windEfficiency || 0,
-                        currentData.batteryLevel || 0,
-                      ],
-                      backgroundColor: [
-                        "rgba(59, 130, 246, 0.8)",
-                        "rgba(34, 197, 94, 0.8)",
-                        "rgba(245, 158, 11, 0.8)",
-                      ],
-                      borderColor: [
-                        "rgb(59, 130, 246)",
-                        "rgb(34, 197, 94)",
-                        "rgb(245, 158, 11)",
-                      ],
-                      borderWidth: 2,
-                    },
-                  ],
-                }}
-                options={doughnutOptions}
-              />
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                No data available
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Device Status & Controls */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-          {/* Device Status */}
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Device Status
-            </h3>
-            {deviceStatus && deviceStatus.length > 0 && (
-              <div className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Status:</span>
-                  <span
-                    className={`px-2 py-1 rounded-full text-sm font-medium ${
-                      deviceStatus[0].isOnline
-                        ? "bg-green-100 text-green-800"
-                        : "bg-red-100 text-red-800"
-                    }`}
-                  >
-                    {deviceStatus[0].isOnline ? "🟢 Online" : "🔴 Offline"}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Battery Level:</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {deviceStatus[0].batteryLevel}%
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Connection Quality:</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {deviceStatus[0].connectionQuality}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-600">Last Seen:</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {new Date(deviceStatus[0].lastSeen).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Stream Controls */}
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Stream Controls
-            </h3>
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2">
-                <span className="text-gray-600">Connection:</span>
-                <span
-                  className={`px-2 py-1 rounded-full text-sm font-medium ${
-                    connectionStatus === "connected"
-                      ? "bg-green-100 text-green-800"
-                      : connectionStatus === "connecting"
-                      ? "bg-yellow-100 text-yellow-800"
-                      : connectionStatus === "error"
-                      ? "bg-red-100 text-red-800"
-                      : "bg-gray-100 text-gray-800"
-                  }`}
-                >
-                  {connectionStatus}
-                </span>
-              </div>
-
-              <div className="flex space-x-3">
-                <button
-                  onClick={fetchFallbackData}
-                  className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-                >
-                  Refresh Data
-                </button>
-                <button
-                  onClick={connectToStream}
-                  className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-                >
-                  Reconnect
-                </button>
-                <button
-                  onClick={testStream}
-                  className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-                >
-                  Test Stream
-                </button>
-              </div>
-
-              {error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-                  <p className="text-red-800 text-sm">{error}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Statistics Summary */}
-        {statistics && (
-          <div className="bg-white rounded-xl shadow-lg p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              System Statistics
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-              <div className="text-center">
-                <p className="text-2xl font-bold text-blue-600">
-                  {statistics.totalReadings || 0}
-                </p>
-                <p className="text-sm text-gray-600">Total Readings</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold text-green-600">
-                  {statistics.avgTemperature?.toFixed(1) || "N/A"}°C
-                </p>
-                <p className="text-sm text-gray-600">Avg Temperature</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold text-yellow-600">
-                  {statistics.avgPower?.toFixed(1) || "N/A"} mW
-                </p>
-                <p className="text-sm text-gray-600">Avg Power</p>
-              </div>
-              <div className="text-center">
-                <p className="text-2xl font-bold text-purple-600">
-                  {statistics.avgEfficiency?.toFixed(1) || "N/A"}%
-                </p>
-                <p className="text-sm text-gray-600">Avg Efficiency</p>
+            <div className="flex justify-center">
+              <div className="w-80">
+                <Doughnut data={efficiencyData} options={doughnutOptions} />
               </div>
             </div>
           </div>
-        )}
-
-        {/* API Response Debug */}
-        {apiResponse && (
-          <div className="bg-gray-50 rounded-xl p-6 mt-8">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Stream Test Results
-            </h3>
-            <pre className="bg-white p-4 rounded-lg overflow-auto text-sm">
-              {JSON.stringify(apiResponse, null, 2)}
-            </pre>
-          </div>
-        )}
+        </div>
 
         {/* AI Predictions Section */}
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-2xl font-bold text-gray-800 mb-4 flex items-center">
-            🤖 AI Solar Predictions
+        <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20 mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-semibold text-gray-800 flex items-center">
+              <span className="mr-2">🤖</span>
+              AI Solar Predictions
+            </h3>
             <button
               onClick={fetchAIPredictions}
               disabled={predictionLoading}
-              className="ml-auto px-3 py-1 bg-blue-500 text-white rounded-md text-sm hover:bg-blue-600 disabled:opacity-50"
+              className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white px-6 py-2 rounded-full font-semibold transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:opacity-50"
             >
-              {predictionLoading ? "Loading..." : "Refresh"}
+              {predictionLoading ? "🔄 Loading..." : "🔮 Update Predictions"}
             </button>
-          </h2>
-
-          {/* Debug Info */}
-          <div className="mb-4 p-3 bg-gray-100 rounded text-sm">
-            <p>
-              <strong>Debug Info:</strong>
-            </p>
-            <p>AI Prediction: {aiPrediction ? "✅ Loaded" : "❌ Not loaded"}</p>
-            <p>Day Forecast: {dayForecast ? "✅ Loaded" : "❌ Not loaded"}</p>
-            <p>Loading: {predictionLoading ? "🔄 Yes" : "✅ No"}</p>
-            <div className="flex space-x-2 mt-2">
-              <button
-                onClick={() => {
-                  console.log("Manual AI fetch triggered");
-                  fetchAIPredictions();
-                }}
-                className="px-2 py-1 bg-yellow-500 text-white rounded text-xs"
-              >
-                Force AI Fetch
-              </button>
-              <button
-                onClick={() => {
-                  console.log("Manual loading state reset");
-                  setPredictionLoading(false);
-                }}
-                className="px-2 py-1 bg-red-500 text-white rounded text-xs"
-              >
-                Reset Loading
-              </button>
-            </div>
           </div>
 
           {aiPrediction && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-              <div className="bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-lg">
-                <h3 className="text-sm font-medium text-blue-800">
-                  Predicted Power
-                </h3>
-                <p className="text-2xl font-bold text-blue-900">
-                  {aiPrediction.predicted_power.toFixed(1)} mW
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 border border-purple-200">
+                <h4 className="font-semibold text-purple-800 mb-2">
+                  Current Prediction
+                </h4>
+                <p className="text-2xl font-bold text-purple-600">
+                  {aiPrediction.predicted_power?.toFixed(2) || "0.00"} mW
+                </p>
+                <p className="text-sm text-purple-600">
+                  Irradiance: {aiPrediction.irradiance?.toFixed(0) || "0"} W/m²
                 </p>
               </div>
 
-              <div className="bg-gradient-to-r from-green-50 to-green-100 p-4 rounded-lg">
-                <h3 className="text-sm font-medium text-green-800">
-                  Weather Conditions
-                </h3>
-                <p className="text-lg font-semibold text-green-900">
-                  {aiPrediction.irradiance > 600
-                    ? "Sunny"
-                    : aiPrediction.irradiance > 400
-                    ? "Partly Cloudy"
-                    : aiPrediction.irradiance > 200
-                    ? "Cloudy"
-                    : "Overcast"}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
+                <h4 className="font-semibold text-blue-800 mb-2">
+                  Temperature Impact
+                </h4>
+                <p className="text-2xl font-bold text-blue-600">
+                  {aiPrediction.temperature?.toFixed(1) || "0.0"}°C
+                </p>
+                <p className="text-sm text-blue-600">
+                  Humidity: {aiPrediction.humidity?.toFixed(1) || "0.0"}%
                 </p>
               </div>
 
-              <div className="bg-gradient-to-r from-purple-50 to-purple-100 p-4 rounded-lg">
-                <h3 className="text-sm font-medium text-purple-800">
-                  Temperature
-                </h3>
-                <p className="text-2xl font-bold text-purple-900">
-                  {aiPrediction.temperature.toFixed(1)}°C
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4 border border-green-200">
+                <h4 className="font-semibold text-green-800 mb-2">
+                  Time Factor
+                </h4>
+                <p className="text-2xl font-bold text-green-600">
+                  Hour {aiPrediction.hr || currentData.hour || 0}
                 </p>
-              </div>
-
-              <div className="bg-gradient-to-r from-orange-50 to-orange-100 p-4 rounded-lg">
-                <h3 className="text-sm font-medium text-orange-800">
-                  Humidity
-                </h3>
-                <p className="text-2xl font-bold text-orange-900">
-                  {aiPrediction.humidity.toFixed(1)}%
+                <p className="text-sm text-green-600">
+                  Source: {aiPrediction.source || "sensor"}
                 </p>
               </div>
             </div>
           )}
 
-          {/* AI vs Actual Comparison Chart */}
-          {getAIPredictionChartData() && (
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-700 mb-3">
-                AI Prediction vs Actual Performance
-              </h3>
-              <div className="h-64">
-                <Line
-                  data={getAIPredictionChartData()!}
-                  options={{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                      legend: {
-                        position: "top" as const,
-                      },
-                      title: {
-                        display: true,
-                        text: "24-Hour Power Prediction vs Actual",
-                      },
-                    },
-                    scales: {
-                      y: {
-                        beginAtZero: true,
-                        title: {
-                          display: true,
-                          text: "Power (mW)",
-                        },
-                      },
-                      x: {
-                        title: {
-                          display: true,
-                          text: "Hour of Day",
-                        },
-                      },
-                    },
-                  }}
-                />
-              </div>
+          {!aiPrediction && !predictionLoading && (
+            <div className="text-center py-8 text-gray-500">
+              <p>
+                🤖 Click &quot;Update Predictions&quot; to get AI-powered solar forecasts
+              </p>
             </div>
           )}
+        </div>
 
-          {/* Prediction Accuracy */}
-          {(() => {
-            const currentData = getCurrentData();
-            const firstData = currentData?.[0];
-            return firstData?.predictionAccuracy ? (
-              <div className="bg-gradient-to-r from-indigo-50 to-indigo-100 p-4 rounded-lg">
-                <h3 className="text-lg font-semibold text-indigo-800 mb-2">
-                  AI Prediction Accuracy
-                </h3>
-                <div className="flex items-center space-x-4">
-                  <div className="text-center">
-                    <p className="text-3xl font-bold text-indigo-900">
-                      {firstData.predictionAccuracy.toFixed(1)}%
-                    </p>
-                    <p className="text-sm text-indigo-700">Accuracy</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-indigo-900">
-                      {firstData.efficiencyVsPrediction?.toFixed(1) || 0}%
-                    </p>
-                    <p className="text-sm text-indigo-700">
-                      Efficiency vs Prediction
-                    </p>
-                  </div>
-                </div>
+        {/* Technical Details */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Sensor Details */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <span className="mr-2">🔧</span>
+              Sensor Details
+            </h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                <span className="text-gray-600">LDR Raw Value</span>
+                <span className="font-semibold">{currentData.ldrRaw || 0}</span>
               </div>
-            ) : null;
-          })()}
+              <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                <span className="text-gray-600">Bus Voltage</span>
+                <span className="font-semibold">
+                  {currentData.busVoltage?.toFixed(2) || "0.00"} V
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                <span className="text-gray-600">Current</span>
+                <span className="font-semibold">
+                  {currentData.current?.toFixed(2) || "0.00"} mA
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                <span className="text-gray-600">Average Wind</span>
+                <span className="font-semibold">
+                  {currentData.avgWind?.toFixed(1) || "0.0"} km/h
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2">
+                <span className="text-gray-600">Hour of Day</span>
+                <span className="font-semibold">
+                  {currentData.hour || 0}:00
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* System Status */}
+          <div className="bg-white/80 backdrop-blur-md rounded-2xl shadow-xl p-6 border border-white/20">
+            <h3 className="text-xl font-semibold text-gray-800 mb-4 flex items-center">
+              <span className="mr-2">📊</span>
+              System Status
+            </h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                <span className="text-gray-600">Device ID</span>
+                <span className="font-semibold">{currentData.deviceId}</span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                <span className="text-gray-600">Battery Level</span>
+                <span className="font-semibold">
+                  {currentData.batteryLevel || 0}%
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                <span className="text-gray-600">Solar Efficiency</span>
+                <span className="font-semibold">
+                  {currentData.solarEfficiency?.toFixed(1) || "0.0"}%
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2 border-b border-gray-200">
+                <span className="text-gray-600">Connection Quality</span>
+                <span
+                  className={`font-semibold ${
+                    currentData.connectionQuality === "excellent"
+                      ? "text-green-600"
+                      : currentData.connectionQuality === "good"
+                      ? "text-blue-600"
+                      : currentData.connectionQuality === "fair"
+                      ? "text-yellow-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  {currentData.connectionQuality || "good"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-2">
+                <span className="text-gray-600">Total Data Points</span>
+                <span className="font-semibold">{allData.length}</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

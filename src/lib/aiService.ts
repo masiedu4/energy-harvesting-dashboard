@@ -27,7 +27,7 @@ export class AIService {
   ): Promise<AIPrediction | null> {
     try {
       // Calculate irradiance from light status (approximate)
-      const irradiance = this.estimateIrradiance(sensorData.lightStatus);
+      const irradiance = this.estimateIrradiance(sensorData.light_status);
 
       // Get current hour
       const now = new Date();

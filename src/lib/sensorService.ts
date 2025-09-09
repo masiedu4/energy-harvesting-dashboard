@@ -13,12 +13,13 @@ interface SensorDataRow {
   timestamp: string;
   temperature: number | null;
   humidity: number | null;
-  light_status: string | null;
-  wind_speed: number | null;
-  potential_wind_power: number | null;
   bus_voltage: number | null;
   current: number | null;
   power: number | null;
+  light_value: number | null;
+  light_status: string | null;
+  wind_count: number | null;
+  hr: number | null;
   battery_level: number | null;
   solar_efficiency: number | null;
   wind_efficiency: number | null;
@@ -40,6 +41,15 @@ class SensorDataService {
   private readonly DEVICE_ID = "ESP32_001"; // Default device ID
   private dataListeners: Array<(data: ProcessedSensorData) => void> = [];
 
+  /**
+   * Clear all stored data (useful for production reset)
+   */
+  clearAllData(): void {
+    this.sensorData = [];
+    this.deviceStatus.clear();
+    console.log("🧹 Cleared all sensor data - ready for real ESP32 data");
+  }
+
   constructor() {
     // Initialize device status
     this.deviceStatus.set(this.DEVICE_ID, {
@@ -50,8 +60,8 @@ class SensorDataService {
       connectionQuality: "poor",
     });
 
-    // Load initial data from Supabase
-    this.loadInitialData();
+    // Load initial data from Supabase (disabled for now to prevent continuous running)
+    // this.loadInitialData();
   }
 
   /**
@@ -130,12 +140,13 @@ class SensorDataService {
       deviceId: row.device_id,
       temperature: row.temperature || 0,
       humidity: row.humidity || 0,
-      lightStatus: row.light_status || "Unknown",
-      windSpeed: row.wind_speed || 0,
-      potentialWindPower: row.potential_wind_power || 0,
       busVoltage: row.bus_voltage || 0,
       current: row.current || 0,
       power: row.power || 0,
+      lightValue: row.light_value || 0,
+      lightStatus: row.light_status || "Unknown",
+      windCount: row.wind_count || 0,
+      hour: row.hr || 0,
       batteryLevel: row.battery_level || 0,
       solarEfficiency: row.solar_efficiency || 0,
       windEfficiency: row.wind_efficiency || 0,
@@ -166,12 +177,13 @@ class SensorDataService {
       timestamp: data.timestamp,
       temperature: data.temperature,
       humidity: data.humidity,
-      light_status: data.lightStatus,
-      wind_speed: data.windSpeed,
-      potential_wind_power: data.potentialWindPower,
       bus_voltage: data.busVoltage,
       current: data.current,
       power: data.power,
+      light_value: data.lightValue,
+      light_status: data.lightStatus,
+      wind_count: data.windCount,
+      hr: data.hour,
       battery_level: data.batteryLevel,
       solar_efficiency: data.solarEfficiency,
       wind_efficiency: data.windEfficiency,
@@ -206,7 +218,7 @@ class SensorDataService {
       if (error) {
         console.error("Error saving to Supabase:", error);
       } else {
-        console.log("💾 Saved sensor data to Supabase");
+        // console.log("💾 Saved sensor data to Supabase");
       }
     } catch (error: unknown) {
       console.error("Error saving to Supabase:", error);
@@ -290,12 +302,13 @@ class SensorDataService {
         deviceId: "ESP32_001",
         temperature: rawData.temperature,
         humidity: rawData.humidity,
-        lightStatus: rawData.lightStatus,
-        windSpeed: rawData.windSpeed,
-        potentialWindPower: rawData.potentialWindPower,
-        busVoltage: rawData.busVoltage,
+        busVoltage: rawData.bus_voltage,
         current: rawData.current,
         power: rawData.power,
+        lightValue: rawData.light_value,
+        lightStatus: rawData.light_status,
+        windCount: rawData.wind_count,
+        hour: rawData.hr,
         batteryLevel: 0, // Will be calculated below
         solarEfficiency: 0, // Will be calculated below
         windEfficiency: 0, // Will be calculated below
@@ -308,12 +321,12 @@ class SensorDataService {
       });
 
       // Calculate derived metrics
-      const batteryLevel = this.calculateBatteryLevel(rawData.busVoltage);
+      const batteryLevel = this.calculateBatteryLevel(rawData.bus_voltage);
       const solarEfficiency = this.calculateSolarEfficiency(
         rawData.power,
-        rawData.lightStatus
+        rawData.light_status
       );
-      const windEfficiency = this.calculateWindEfficiency(rawData.windSpeed);
+      const windEfficiency = this.calculateWindEfficiency(rawData.wind_count);
       const totalEfficiency = Math.round(
         (solarEfficiency + windEfficiency) / 2
       );
@@ -349,12 +362,13 @@ class SensorDataService {
         deviceId: "ESP32_001",
         temperature: rawData.temperature,
         humidity: rawData.humidity,
-        lightStatus: rawData.lightStatus,
-        windSpeed: rawData.windSpeed,
-        potentialWindPower: rawData.potentialWindPower,
-        busVoltage: rawData.busVoltage,
+        busVoltage: rawData.bus_voltage,
         current: rawData.current,
         power: rawData.power,
+        lightValue: rawData.light_value,
+        lightStatus: rawData.light_status,
+        windCount: rawData.wind_count,
+        hour: rawData.hr,
         batteryLevel,
         solarEfficiency,
         windEfficiency,
