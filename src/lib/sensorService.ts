@@ -351,8 +351,7 @@ class SensorDataService {
         );
         efficiencyVsPrediction = mockAIService.calculateEfficiencyVsPrediction(
           totalEfficiency,
-          aiPrediction.predicted_power,
-          rawData.power
+          aiPrediction.predicted_power
         );
       }
 

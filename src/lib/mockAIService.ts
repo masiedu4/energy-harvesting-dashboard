@@ -351,8 +351,7 @@ export class MockAIService {
    */
   calculateEfficiencyVsPrediction(
     actualEfficiency: number,
-    predictedPower: number,
-    power: number
+    predictedPower: number
   ): number {
     if (predictedPower === 0) return 0;
 
